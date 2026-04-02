@@ -1,0 +1,36 @@
+{
+    "name": "weareplanet/plugin-core",
+    "description": "Core functionality for the WeArePlanet plugins.",
+    "type": "library",
+    "license": "Apache-2.0",
+    "autoload": {
+        "psr-4": {
+            "WeArePlanet\\PluginCore\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "WeArePlanet\\PluginCore\\Tests\\": "tests/"
+        }
+    },
+    "require": {
+        "php": ">=8.2",
+        "weareplanet/sdk": "^5.0",
+        "guzzlehttp/guzzle": "^7.10"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.5",
+        "phpstan/phpstan": "^2.1",
+        "phpstan/phpstan-phpunit": "^2.0",
+        "phpstan/extension-installer": "^1.4",
+        "friendsofphp/php-cs-fixer": "^3.88"
+    },
+    "config": {
+        "allow-plugins": {
+            "phpstan/extension-installer": true
+        }
+    },
+    "scripts": {
+        "test": "./vendor/bin/phpunit"
+    }
+}
