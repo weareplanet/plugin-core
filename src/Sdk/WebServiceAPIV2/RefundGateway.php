@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace WeArePlanet\PluginCore\Sdk\SdkV2;
+namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV2;
 
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Refund\Refund;

@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace WeArePlanet\PluginCore\Tests\Sdk\SdkV2;
+namespace WeArePlanet\PluginCore\Tests\Sdk\WebServiceAPIV2;
 
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
-use WeArePlanet\PluginCore\Sdk\SdkV2\RecurringTransactionGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\RecurringTransactionGateway;
 use WeArePlanet\PluginCore\Transaction\State as StateEnum;
 use WeArePlanet\PluginCore\Transaction\Transaction;
 use WeArePlanet\Sdk\Model\Charge as SdkCharge;

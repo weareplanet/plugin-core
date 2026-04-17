@@ -6,23 +6,58 @@ namespace WeArePlanet\PluginCore\Sdk;
 
 use WeArePlanet\PluginCore\Settings\Settings;
 use WeArePlanet\Sdk\Configuration as SdkConfiguration;
-use WeArePlanet\Sdk\ApiClient as SdkApiClient;
 
 class SdkProvider
 {
     private SdkConfiguration $configuration;
-    private ?SdkApiClient $apiClient = null; // Keep for backward compatibility if needed, though V2 uses Config
     private int $spaceId;
     /** @var array<class-string<object>, object> */
     private array $serviceInstances = [];
 
+    /**
+     * Initializes the SDK Provider with the given settings.
+     *
+     * It sets up the SDK Configuration, including authentication credentials and
+     * the "Smart URL" logic for the API host.
+     *
+     * @param Settings $settings
+     */
     public function __construct(Settings $settings)
     {
         // V2 uses SdkConfiguration
         $this->configuration = new SdkConfiguration($settings->getUserId(), $settings->getApiKey());
-        // Fix: Set global default configuration to avoid TypeError in ObjectSerializer which relies on it
+
+        $baseUrl = $settings->getBaseUrl();
+        if (!empty($baseUrl)) {
+            $host = $baseUrl;
+            // Ensure protocol is present
+            if (!str_starts_with($host, 'http://') && !str_starts_with($host, 'https://')) {
+                $host = 'https://' . $host;
+            }
+            // Smart URL Logic: Check for path (URI), append /api/v2.0 if missing
+            $parts = parse_url($host);
+            if (!isset($parts['path']) || $parts['path'] === '' || $parts['path'] === '/') {
+                $host = rtrim($host, '/') . '/api/v2.0';
+            }
+            $this->configuration->setHost($host);
+        }
+
+        // Set global default configuration to avoid TypeError in ObjectSerializer which relies on it
         SdkConfiguration::setDefaultConfiguration($this->configuration);
         $this->spaceId = $settings->getSpaceId();
+    }
+
+    /**
+     * Returns the SDK configuration.
+     *
+     * This allows consumer applications to reuse the same configured SDK instance
+     * and avoid duplicating the host URL formatting logic.
+     *
+     * @return SdkConfiguration
+     */
+    public function getConfiguration(): SdkConfiguration
+    {
+        return $this->configuration;
     }
 
     /**

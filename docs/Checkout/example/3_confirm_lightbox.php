@@ -10,8 +10,9 @@ use WeArePlanet\PluginCore\Examples\Common\FilePersistence;
 use WeArePlanet\PluginCore\Examples\Common\TransactionIdLoader;
 use WeArePlanet\PluginCore\LineItem\LineItemConsistencyService;
 use WeArePlanet\PluginCore\Render\IntegratedPaymentRenderService;
+use WeArePlanet\PluginCore\Render\RenderOptions;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
-use WeArePlanet\PluginCore\Sdk\SdkV2\TransactionGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\TransactionGateway;
 use WeArePlanet\PluginCore\Settings\Settings;
 use WeArePlanet\PluginCore\Transaction\TransactionService;
 
@@ -64,8 +65,14 @@ try {
     // Get JS URL
     $javascriptUrl = $service->getPaymentUrl((int)$spaceId, $transactionId);
 
-    // Render HTML Block
-    $blockHtml = $renderService->render($javascriptUrl, $method->id, $mode, 'payment-form');
+    // Render HTML Block using custom options.
+    // The rendered script automatically registers the handler in a global registry:
+    //   window.__weareplanetHandlers[configId]
+    // This allows frontend frameworks (e.g., Alpine.js in Hyvä Checkout) to access
+    // the handler for calling startPayment().
+    $options = new RenderOptions(containerId: 'payment-form');
+    $data = $renderService->getMetadata($javascriptUrl, $method->id, $mode);
+    $blockHtml = $renderService->renderHtml($data, $options);
 
     // Load Host Template & Inject
     $templatePath = __DIR__ . '/resources/integrated_checkout_host.html';

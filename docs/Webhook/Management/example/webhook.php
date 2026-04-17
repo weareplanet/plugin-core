@@ -20,8 +20,8 @@ error_reporting(E_ALL & ~E_DEPRECATED);
 require_once __DIR__ . '/../../../examples/Common/bootstrap.php';
 
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
-use WeArePlanet\PluginCore\Sdk\SdkV2\WebhookManagementGateway;
-use WeArePlanet\PluginCore\Sdk\SdkV2\WebhookSignatureGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\WebhookManagementGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\WebhookSignatureGateway;
 use WeArePlanet\PluginCore\Settings\Settings;
 use WeArePlanet\PluginCore\Webhook\Enum\WebhookListener;
 use WeArePlanet\PluginCore\Transaction\State as TransactionState;

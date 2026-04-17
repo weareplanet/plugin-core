@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace WeArePlanet\PluginCore\Sdk\SdkV2;
+namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV2;
 
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Transaction\Completion\State;

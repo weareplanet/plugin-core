@@ -7,7 +7,7 @@ This module provides functionality to retrieve official PDF documents generated 
 The module follows the Domain-Driven Design (DDD) and Clean Architecture principles:
 
 - **Domain Layer (`src/Document`)**: Contains the `RenderedDocument` entity and the `DocumentGatewayInterface` and `DocumentService`.
-- **Infrastructure Layer (`src/Sdk/SdkV2`)**: Contains the `DocumentGateway` implementation that interacts with the SDK.
+- **Infrastructure Layer (`src/Sdk/WebServiceAPIV2`)**: Contains the `DocumentGateway` implementation that interacts with the SDK.
 
 ## Features
 

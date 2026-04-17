@@ -16,7 +16,7 @@ The system is designed to process incoming webhooks by mapping them to specific 
 
 * **`SettingsProviderInterface` / `DefaultSettingsProvider`**: Provides essential configuration (Space ID, User ID, etc.) to `plugin-core`. Plugins **extend `DefaultSettingsProvider`** to provide these values.
 * **`Settings`**: An object in `plugin-core` that fetches and validates configuration.
-* **`SdkProvider`**: A service in `plugin-core` that uses `Settings` to create a configured WeArePlanet SDK `ApiClient`.
+* **`SdkProvider`**: A service in `plugin-core` that uses `Settings` to provide a configured WeArePlanet SDK configuration and services.
 * **`StateFetcherInterface`**: An interface for getting the webhook's current (**`remoteState`**). `plugin-core` provides a `DefaultStateFetcher` (which uses the `SdkProvider`).
 * **`WebhookLifecycleHandler`**: The bridge between the core engine and your shop's infrastructure. It handles locking, transactions, and tracking progress.
 * **`StateMapperInterface`**: An **optional** interface a plugin can implement to "translate" between `plugin-core`'s standard states (e.g., `COMPLETED`) and the application's own custom state names (e.g., `wc-processing`).

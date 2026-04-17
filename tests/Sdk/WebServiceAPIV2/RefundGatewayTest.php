@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace WeArePlanet\PluginCore\Tests\Sdk\SdkV2;
+namespace WeArePlanet\PluginCore\Tests\Sdk\WebServiceAPIV2;
 
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
@@ -11,7 +11,7 @@ use WeArePlanet\PluginCore\Refund\Refund;
 use WeArePlanet\PluginCore\Refund\RefundContext;
 use WeArePlanet\PluginCore\Refund\Type as RefundType;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
-use WeArePlanet\PluginCore\Sdk\SdkV2\RefundGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\RefundGateway;
 use WeArePlanet\PluginCore\Transaction\Transaction;
 use WeArePlanet\Sdk\Model\Refund as SdkRefund;
 use WeArePlanet\Sdk\Model\RefundCreate as SdkRefundCreate;

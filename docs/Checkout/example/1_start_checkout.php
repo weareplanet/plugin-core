@@ -9,7 +9,7 @@ use WeArePlanet\PluginCore\Address\Address;
 use WeArePlanet\PluginCore\LineItem\LineItem;
 use WeArePlanet\PluginCore\LineItem\LineItemConsistencyService;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
-use WeArePlanet\PluginCore\Sdk\SdkV2\TransactionGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\TransactionGateway;
 use WeArePlanet\PluginCore\Settings\Settings;
 use WeArePlanet\PluginCore\Tax\Tax;
 use WeArePlanet\PluginCore\Token\TokenizationMode as TokenizationModeEnum;

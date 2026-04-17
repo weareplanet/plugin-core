@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace WeArePlanet\PluginCore\Tests\Sdk\SdkV2;
+namespace WeArePlanet\PluginCore\Tests\Sdk\WebServiceAPIV2;
 
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
@@ -10,7 +10,7 @@ use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethod;
 use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
-use WeArePlanet\PluginCore\Sdk\SdkV2\PaymentMethodGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\PaymentMethodGateway;
 use WeArePlanet\Sdk\Model\PaymentMethodConfiguration as SdkPaymentMethodConfiguration;
 use WeArePlanet\Sdk\Model\CreationEntityState as SdkCreationEntityState;
 use WeArePlanet\Sdk\Service\PaymentMethodConfigurationsService as SdkPaymentMethodConfigurationService;

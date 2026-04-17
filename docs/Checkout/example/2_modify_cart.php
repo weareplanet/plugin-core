@@ -13,7 +13,7 @@ use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodSorting as PaymentMethodSo
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Examples\Common\FilePersistence;
 use WeArePlanet\PluginCore\Examples\Common\TransactionIdLoader;
-use WeArePlanet\PluginCore\Sdk\SdkV2\TransactionGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\TransactionGateway;
 use WeArePlanet\PluginCore\Settings\Settings;
 use WeArePlanet\PluginCore\Tax\Tax;
 use WeArePlanet\PluginCore\Transaction\TransactionContext;

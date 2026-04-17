@@ -18,7 +18,7 @@ error_reporting(E_ALL & ~E_DEPRECATED);
 require_once __DIR__ . '/../../examples/Common/bootstrap.php';
 
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
-use WeArePlanet\PluginCore\Sdk\SdkV2\TransactionCompletionGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\TransactionCompletionGateway;
 use WeArePlanet\PluginCore\Settings\Settings;
 use WeArePlanet\PluginCore\Transaction\Completion\TransactionCompletionService;
 use WeArePlanet\PluginCore\Examples\Common\TransactionIdLoader;

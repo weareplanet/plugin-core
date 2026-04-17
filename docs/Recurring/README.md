@@ -40,8 +40,8 @@ $context->tokenizationMode = TokenizationModeEnum::FORCE_CREATION;
  use WeArePlanet\PluginCore\Transaction\RecurringTransactionService;
  use WeArePlanet\PluginCore\Transaction\TransactionService;
  use WeArePlanet\PluginCore\Token\TokenService;
- use WeArePlanet\PluginCore\Sdk\SdkV2\RecurringTransactionGateway;
- use WeArePlanet\PluginCore\Sdk\SdkV2\TokenGateway;
+ use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\RecurringTransactionGateway;
+ use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\TokenGateway;
  
  // 1. Setup Gateways
  $recurringGateway = new RecurringTransactionGateway($sdkProvider, $logger);

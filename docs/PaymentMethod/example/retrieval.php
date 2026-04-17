@@ -19,7 +19,7 @@ require_once __DIR__ . '/../../../vendor/autoload.php';
 // These helper classes simulate a typical integration environment.
 
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
-use WeArePlanet\PluginCore\Sdk\SdkV2\PaymentMethodGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\PaymentMethodGateway;
 use WeArePlanet\PluginCore\Settings\Settings;
 use WeArePlanet\PluginCore\Settings\SettingsProviderInterface;
 use WeArePlanet\PluginCore\Settings\IntegrationMode as IntegrationModeEnum;

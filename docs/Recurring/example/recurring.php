@@ -18,14 +18,14 @@ error_reporting(E_ALL & ~E_DEPRECATED);
 require_once __DIR__ . '/../../examples/Common/bootstrap.php';
 
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
-use WeArePlanet\PluginCore\Sdk\SdkV2\TransactionCompletionGateway;
-use WeArePlanet\PluginCore\Sdk\SdkV2\TransactionGateway;
-use WeArePlanet\PluginCore\Sdk\SdkV2\RecurringTransactionGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\TransactionCompletionGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\TransactionGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\RecurringTransactionGateway;
 use WeArePlanet\PluginCore\Settings\Settings;
 use WeArePlanet\PluginCore\Transaction\RecurringTransactionService;
 use WeArePlanet\PluginCore\Transaction\TransactionService;
 use WeArePlanet\PluginCore\Token\TokenService;
-use WeArePlanet\PluginCore\Sdk\SdkV2\TokenGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\TokenGateway;
 use WeArePlanet\PluginCore\LineItem\LineItemConsistencyService;
 use WeArePlanet\PluginCore\Examples\Common\TransactionIdLoader;
 

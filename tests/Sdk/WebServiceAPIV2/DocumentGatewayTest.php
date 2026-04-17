@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace WeArePlanet\PluginCore\Tests\Sdk\SdkV2;
+namespace WeArePlanet\PluginCore\Tests\Sdk\WebServiceAPIV2;
 
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use WeArePlanet\PluginCore\Document\RenderedDocument;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
-use WeArePlanet\PluginCore\Sdk\SdkV2\DocumentGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\DocumentGateway;
 use WeArePlanet\Sdk\Model\RenderedDocument as SdkRenderedDocument;
 use WeArePlanet\Sdk\Model\TransactionCompletion as SdkTransactionCompletion;
 use WeArePlanet\Sdk\Model\TransactionInvoice as SdkTransactionInvoice;
