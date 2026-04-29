@@ -13,9 +13,9 @@ namespace MyPlugin\ExampleRecurringImplementation;
 
 use WeArePlanet\PluginCore\Examples\Common\TransactionIdLoader;
 use WeArePlanet\PluginCore\LineItem\LineItemConsistencyService;
-use WeArePlanet\PluginCore\Sdk\SdkV1\RecurringTransactionGateway;
-use WeArePlanet\PluginCore\Sdk\SdkV1\TokenGateway;
-use WeArePlanet\PluginCore\Sdk\SdkV1\TransactionGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\RecurringTransactionGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TokenGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TransactionGateway;
 use WeArePlanet\PluginCore\Token\TokenService;
 use WeArePlanet\PluginCore\Transaction\RecurringTransactionService;
 use WeArePlanet\PluginCore\Transaction\TransactionService;

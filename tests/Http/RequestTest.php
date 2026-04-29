@@ -9,6 +9,20 @@ use WeArePlanet\PluginCore\Http\Request;
 
 class RequestTest extends TestCase
 {
+    public function testCreate(): void
+    {
+        $headers = ['Content-Type' => 'application/json', 'X-Custom-Header' => 'value'];
+        $body = ['foo' => 'bar'];
+        $rawBody = (string) json_encode($body);
+
+        $request = Request::create($headers, $body, $rawBody);
+
+        $this->assertEquals($body, $request->body);
+        $this->assertEquals($rawBody, $request->getRawBody());
+        $this->assertEquals('value', $request->getHeader('X-Custom-Header'));
+        $this->assertEquals('value', $request->getHeader('x-custom-header')); // check case-insensitivity
+    }
+
     public function testToString(): void
     {
         // For testing, since constructor is private and fromWordPress reads superglobals

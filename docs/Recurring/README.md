@@ -25,8 +25,8 @@ If the original transaction does not have a saved token, the service attempts to
  use WeArePlanet\PluginCore\Transaction\RecurringTransactionService;
  use WeArePlanet\PluginCore\Transaction\TransactionService;
  use WeArePlanet\PluginCore\Token\TokenService;
- use WeArePlanet\PluginCore\Sdk\SdkV1\RecurringTransactionGateway;
- use WeArePlanet\PluginCore\Sdk\SdkV1\TokenGateway;
+ use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\RecurringTransactionGateway;
+ use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TokenGateway;
  
  // 1. Setup Gateways
  $recurringGateway = new RecurringTransactionGateway($sdkProvider, $logger);

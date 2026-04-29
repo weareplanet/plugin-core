@@ -63,7 +63,7 @@ Inject the necessary dependencies. In a real application, use your Dependency In
 use WeArePlanet\PluginCore\Transaction\TransactionService;
 use WeArePlanet\PluginCore\Settings\Settings;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
-use WeArePlanet\PluginCore\Sdk\SdkV1\TransactionGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TransactionGateway;
 // ... other imports
 
 // 1. Setup SDK

@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace WeArePlanet\PluginCore\Tests\Sdk\SdkV1;
+namespace WeArePlanet\PluginCore\Tests\Sdk\WebServiceAPIV1;
 
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
-use WeArePlanet\PluginCore\Sdk\SdkV1\TransactionCommentGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TransactionCommentGateway;
 use WeArePlanet\Sdk\Model\TransactionComment as SdkTransactionComment;
 use WeArePlanet\Sdk\Service\TransactionCommentService as SdkTransactionCommentService;
 

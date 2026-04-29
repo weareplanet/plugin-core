@@ -12,7 +12,7 @@ namespace MyPlugin\ExampleCaptureImplementation;
  */
 
 use WeArePlanet\PluginCore\Examples\Common\TransactionIdLoader;
-use WeArePlanet\PluginCore\Sdk\SdkV1\TransactionCompletionGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TransactionCompletionGateway;
 use WeArePlanet\PluginCore\Transaction\Completion\TransactionCompletionService;
 
 error_reporting(E_ALL & ~E_DEPRECATED);

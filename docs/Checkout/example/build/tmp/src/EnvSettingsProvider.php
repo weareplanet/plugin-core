@@ -6,7 +6,7 @@ use WeArePlanet\PluginCore\Settings\DefaultSettingsProvider;
 
 class EnvSettingsProvider extends DefaultSettingsProvider
 {
-    // 1. We ONLY implement the required credentials
+    // We ONLY implement the required credentials
     public function getSpaceId(): ?int
     {
         $val = getenv('PLUGINCORE_DEMO_SPACE_ID');
@@ -25,7 +25,7 @@ class EnvSettingsProvider extends DefaultSettingsProvider
         return $val ?: null;
     }
 
-    // 2. We override ONLY what we want to change for the Demo
+    // We override ONLY what we want to change for the Demo
     
     // public function getLogLevel(): ?string
     // {

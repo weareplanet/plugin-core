@@ -18,9 +18,9 @@ use WeArePlanet\PluginCore\Document\DocumentService;
 use WeArePlanet\PluginCore\Examples\Common\TransactionIdLoader;
 use WeArePlanet\PluginCore\LineItem\LineItemConsistencyService;
 use WeArePlanet\PluginCore\Refund\RefundService;
-use WeArePlanet\PluginCore\Sdk\SdkV1\DocumentGateway;
-use WeArePlanet\PluginCore\Sdk\SdkV1\RefundGateway;
-use WeArePlanet\PluginCore\Sdk\SdkV1\TransactionGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\DocumentGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\RefundGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TransactionGateway;
 use WeArePlanet\PluginCore\Transaction\TransactionService;
 
 error_reporting(E_ALL & ~E_DEPRECATED);

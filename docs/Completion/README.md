@@ -28,7 +28,7 @@ The `TransactionCompletionService` requires the `TransactionCompletionGatewayInt
 
 ```php
 use WeArePlanet\PluginCore\Transaction\Completion\TransactionCompletionService;
-use WeArePlanet\PluginCore\Sdk\SdkV1\TransactionCompletionGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TransactionCompletionGateway;
 
 // 1. Setup Gateways
 $completionGateway = new TransactionCompletionGateway($sdkProvider);

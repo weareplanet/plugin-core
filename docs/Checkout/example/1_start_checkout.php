@@ -6,7 +6,7 @@ use WeArePlanet\PluginCore\Address\Address;
 use WeArePlanet\PluginCore\Examples\Common\FilePersistence;
 use WeArePlanet\PluginCore\LineItem\LineItem;
 use WeArePlanet\PluginCore\LineItem\LineItemConsistencyService;
-use WeArePlanet\PluginCore\Sdk\SdkV1\TransactionGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TransactionGateway;
 use WeArePlanet\PluginCore\Tax\Tax;
 use WeArePlanet\PluginCore\Transaction\TransactionContext;
 use WeArePlanet\PluginCore\Transaction\TransactionService;

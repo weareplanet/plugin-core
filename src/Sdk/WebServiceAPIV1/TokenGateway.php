@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace WeArePlanet\PluginCore\Sdk\SdkV1;
+namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV1;
 
 use Psr\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace WeArePlanet\PluginCore\Sdk\SdkV1;
+namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV1;
 
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Transaction\Completion\State as StateEnum;

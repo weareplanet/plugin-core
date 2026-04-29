@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace WeArePlanet\PluginCore\Tests\Sdk\SdkV1;
+namespace WeArePlanet\PluginCore\Tests\Sdk\WebServiceAPIV1;
 
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
-use WeArePlanet\PluginCore\Sdk\SdkV1\TransactionCompletionGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TransactionCompletionGateway;
 use WeArePlanet\PluginCore\Transaction\Completion\State;
 use WeArePlanet\PluginCore\Transaction\Completion\TransactionCompletion;
 use WeArePlanet\Sdk\Model\TransactionCompletion as SdkTransactionCompletion;

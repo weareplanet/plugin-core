@@ -20,7 +20,7 @@ require_once __DIR__ . '/../../../vendor/autoload.php';
 
 
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
-use WeArePlanet\PluginCore\Sdk\SdkV1\PaymentMethodGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\PaymentMethodGateway;
 use WeArePlanet\PluginCore\Settings\Settings;
 use WeArePlanet\PluginCore\Settings\SettingsProviderInterface;
 use WeArePlanet\PluginCore\Settings\IntegrationMode;

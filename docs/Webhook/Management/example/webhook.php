@@ -16,8 +16,8 @@ namespace MyPlugin\ExampleWebhookImplementation;
  * php webhook.php
  */
 
-use WeArePlanet\PluginCore\Sdk\SdkV1\WebhookManagementGateway;
-use WeArePlanet\PluginCore\Sdk\SdkV1\WebhookSignatureGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\WebhookManagementGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\WebhookSignatureGateway;
 use WeArePlanet\PluginCore\Transaction\State as TransactionState;
 use WeArePlanet\PluginCore\Webhook\Enum\WebhookListener;
 use WeArePlanet\PluginCore\Webhook\WebhookConfig;

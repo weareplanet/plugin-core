@@ -12,7 +12,7 @@ use WeArePlanet\PluginCore\Transaction\TransactionService;
 
 error_reporting(E_ALL & ~E_DEPRECATED);
 
-// Force IFrame Mode
+// Force IFrame Mode for this custom UI demo
 putenv('PLUGINCORE_DEMO_INTEGRATION_MODE=iframe');
 
 /** @var array $common */
@@ -22,8 +22,6 @@ $spaceId = $common['spaceId'];
 $sdkProvider = $common['sdkProvider'];
 $logger = $common['logger'];
 $settings = $common['settings'];
-/** @var FilePersistence $persistence */
-$persistence = $common['persistence'];
 
 // Initialize required services.
 $gateway = new TransactionGateway($sdkProvider, $logger, $settings);
@@ -32,21 +30,16 @@ $service = new TransactionService($gateway, $consistency, $logger);
 $renderService = new IntegratedPaymentRenderService();
 
 // Retrieve the transaction ID from the persistence storage to resume the session.
-// We use the TransactionIdLoader to retrieve the ID from CLI arguments or the session.json file.
 try {
     $transactionId = TransactionIdLoader::load($argv);
 } catch (\Exception $e) {
     exit("ERROR: No active session. Run '1_start_checkout.php' first.\n");
 }
 
-echo "Confirming Checkout for Transaction ID: $transactionId (Mode: IFrame)\n";
+echo "Confirming Checkout for Transaction ID: $transactionId (Mode: Custom UI / Reactive)\n";
 
-// Generate Simulation
 try {
     $mode = 'iframe';
-
-    // Generate the simulation HTML.
-    // We pick the first available payment method and generate the payment URL.
     $paymentMethods = $gateway->getAvailablePaymentMethods((int)$spaceId, $transactionId);
     if (empty($paymentMethods)) {
         exit("\n[ERROR] No payment methods available for this transaction.\n");
@@ -56,35 +49,63 @@ try {
     echo "Selected Payment Method: " . $method->name . " (ID: " . $method->id . ")\n";
 
     $javascriptUrl = $service->getPaymentUrl((int)$spaceId, $transactionId);
-    // The rendered block registers the handler in window.__weareplanetHandlers[configId],
-    // so frontend frameworks (e.g. Alpine.js) can access handler.validate() and handler.submit()
-    // from outside the inline script.
+
+    // Get the raw metadata. This is useful for reactive frameworks (Vue, React, Alpine.js)
+    // that might want to store these values in their state.
     $data = $renderService->getMetadata($javascriptUrl, $method->id, $mode);
-    $blockHtml = $renderService->renderHtml($data, new RenderOptions(containerId: 'payment-form'));
 
-    // Load the host template and inject the rendered payment block.
+    // Generate only the JavaScript tags. 
+    // We also demonstrate how to provide a CSP nonce for secure environments.
+    $cspNonce = 'demo-nonce-' . bin2hex(random_bytes(8));
+    $options = new RenderOptions(
+        containerId: 'custom-payment-container',
+        buttonText: 'Pay with Custom UI',
+        nonce: $cspNonce
+    );
+    $jsTags = $renderService->renderJs($data, $options);
+
+    // Build a custom HTML structure. 
+    // In a real application, this would be part of your frontend template.
+    // Note that we must match the IDs provided in RenderOptions.
+    $customUiHtml = <<<HTML
+<div class="custom-payment-form">
+    <h3>Custom Payment Experience</h3>
+    <p>This UI is built manually, but powered by the standardized RenderService logic.</p>
+    
+    <!-- The container where the IFrame will be injected -->
+    <div id="custom-payment-container" style="border: 1px solid #ccc; padding: 10px; border-radius: 4px;"></div>
+    
+    <!-- Container for validation errors -->
+    <div id="custom-payment-container_errors" style="color: red; margin: 10px 0;"></div>
+    
+    <!-- The submit button -->
+    <button id="custom-payment-container_submit" style="background-color: #28a745; color: white; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer;">
+        Submit Secure Payment
+    </button>
+</div>
+
+<!-- Standardized JavaScript initialization logic with CSP nonce -->
+{$jsTags}
+HTML;
+
+    // Load the host template and inject our custom block.
     $templatePath = __DIR__ . '/resources/integrated_checkout_host.html';
-    if (!file_exists($templatePath)) {
-        exit("\n[ERROR] Host template not found at: $templatePath\n");
-    }
-    $templateHtml = file_get_contents($templatePath);
-    $finalHtml = str_replace('{{content}}', $blockHtml, $templateHtml);
+    $templateHtml = file_exists($templatePath) ? file_get_contents($templatePath) : '<html><body>{{content}}</body></html>';
+    $finalHtml = str_replace('{{content}}', $customUiHtml, $templateHtml);
 
-    // Save the generated simulation to an HTML file.
-    $outputFile = __DIR__ . "/checkout_simulation_iframe_{$transactionId}.html";
+    // Save the generated simulation.
+    $outputFile = __DIR__ . "/checkout_simulation_custom_ui_{$transactionId}.html";
     file_put_contents($outputFile, $finalHtml);
 
     echo "\n---------------------------------------------------\n";
-    echo "CHECKOUT SIMULATION READY (IFrame)\n";
+    echo "CUSTOM UI SIMULATION READY\n";
     echo "---------------------------------------------------\n";
     echo "HTML file generated at: $outputFile\n";
-    echo "\nIMPORTANT: Due to browser security restrictions (CORS), checking out via 'file://' protocol\n";
-    echo "will likely fail with 'postMessage' errors.\n";
-    echo "\nPlease run the following command from the PROJECT ROOT:\n";
-    echo "    php -S localhost:8000\n";
-    echo "\nThen open:\n";
-    echo "    http://localhost:8000/checkout_simulation_iframe_{$transactionId}.html\n";
+    echo "This example uses a CSP nonce: $cspNonce\n";
+    echo "\nPlease run: php -S localhost:8000\n";
+    echo "Then open: http://localhost:8000/checkout_simulation_custom_ui_{$transactionId}.html\n";
     echo "---------------------------------------------------\n";
+
 } catch (\Exception $e) {
     echo "\n[ERROR] Could not generate checkout simulation.\n";
     echo "Reason: " . $e->getMessage() . "\n";

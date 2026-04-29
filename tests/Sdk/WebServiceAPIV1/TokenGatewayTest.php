@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace WeArePlanet\PluginCore\Tests\Sdk\SdkV1;
+namespace WeArePlanet\PluginCore\Tests\Sdk\WebServiceAPIV1;
 
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
-use WeArePlanet\PluginCore\Sdk\SdkV1\TokenGateway;
+use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TokenGateway;
 use WeArePlanet\PluginCore\Token\Token;
 use WeArePlanet\Sdk\Model\CreationEntityState;
 use WeArePlanet\Sdk\Model\Token as SdkToken;
