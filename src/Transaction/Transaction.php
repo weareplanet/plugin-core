@@ -6,8 +6,9 @@ namespace WeArePlanet\PluginCore\Transaction;
 
 use WeArePlanet\PluginCore\Address\Address;
 use WeArePlanet\PluginCore\LineItem\LineItem;
-use WeArePlanet\PluginCore\Token\Token;
+use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Render\JsonStringableTrait;
+use WeArePlanet\PluginCore\Token\Token;
 
 /**
  * Domain object representing a Transaction.
@@ -67,14 +68,14 @@ class Transaction
     public array $lineItems = [];
 
     /**
-     * @var string|null The failure reason description.
+     * @var LocalizedString|null The localized failure reason from the API.
      */
-    public ?string $failureReason = null;
+    public ?LocalizedString $failureReason = null;
 
     /**
-     * @var string|null The user-facing failure message.
+     * @var LocalizedString|null The localized user-facing failure message.
      */
-    public ?string $userFailureMessage = null;
+    public ?LocalizedString $userFailureMessage = null;
 
 
 

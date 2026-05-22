@@ -3,7 +3,7 @@
 namespace WeArePlanet\PluginCore\Examples\Common;
 
 use WeArePlanet\PluginCore\Settings\DefaultSettingsProvider;
-use WeArePlanet\PluginCore\Settings\IntegrationMode as IntegrationModeEnum;
+use WeArePlanet\PluginCore\Settings\IntegrationMode;
 
 class EnvSettingsProvider extends DefaultSettingsProvider
 {
@@ -28,14 +28,14 @@ class EnvSettingsProvider extends DefaultSettingsProvider
 
     // 2. We override ONLY what we want to change for the Demo
 
-    public function getIntegrationMode(): IntegrationModeEnum
+    public function getIntegrationMode(): IntegrationMode
     {
         $mode = getenv('PLUGINCORE_DEMO_INTEGRATION_MODE');
 
         return match ($mode) {
-            'iframe' => IntegrationModeEnum::IFRAME,
-            'lightbox' => IntegrationModeEnum::LIGHTBOX,
-            default => IntegrationModeEnum::PAYMENT_PAGE,
+            'iframe' => IntegrationMode::IFRAME,
+            'lightbox' => IntegrationMode::LIGHTBOX,
+            default => IntegrationMode::PAYMENT_PAGE,
         };
     }
 }

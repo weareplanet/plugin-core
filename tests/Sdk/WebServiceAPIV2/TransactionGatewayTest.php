@@ -98,6 +98,7 @@ class TransactionGatewayTest extends TestCase
         $sdkItem->setId(55);
         $sdkItem->setLinkedSpaceId($spaceId);
         $sdkItem->setResolvedTitle(['en-US' => 'Invoice']);
+        $sdkItem->setState(SdkCreationEntityState::ACTIVE);
 
         // V2: getPaymentTransactionsIdPaymentMethodConfigurations
         $response = new PaymentMethodConfigurationListResponse();
@@ -190,8 +191,8 @@ class TransactionGatewayTest extends TestCase
 
         $transaction = $this->gateway->find($spaceId, $transactionId);
 
-        $this->assertEquals('Insufficient funds', $transaction->failureReason);
-        $this->assertEquals('Payment failed, please try again.', $transaction->userFailureMessage);
+        $this->assertEquals('Insufficient funds', $transaction->failureReason->localize('en-US'));
+        $this->assertEquals('Payment failed, please try again.', $transaction->userFailureMessage->localize('en-US'));
         $this->assertEquals($now->getTimestamp(), $transaction->createdOn->getTimestamp());
     }
 

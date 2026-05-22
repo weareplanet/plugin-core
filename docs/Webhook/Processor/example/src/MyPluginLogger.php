@@ -27,7 +27,10 @@ class MyPluginLogger implements LoggerInterface
         $this->minLevel = self::LEVELS[strtoupper($minLevelStr)] ?? 1;
     }
 
-    public function log($level, \Stringable|string $message, array $context = []): void
+    /**
+     * Standard implementation of PSR-3 log method with mixed level type.
+     */
+    public function log(mixed $level, \Stringable|string $message, array $context = [],): void
     {
         $levelName = strtoupper((string) $level);
         $messageLevel = self::LEVELS[$levelName] ?? 1;

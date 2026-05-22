@@ -50,7 +50,10 @@ class SimpleLogger implements LoggerInterface
         $this->log('DEBUG', $message, $context);
     }
 
-    public function log($level, \Stringable|string $message, array $context = []): void
+    /**
+     * Standard implementation of PSR-3 log method with mixed level type.
+     */
+    public function log(mixed $level, \Stringable|string $message, array $context = [],): void
     {
         $ctx = empty($context) ? '' : ' ' . json_encode($context);
         echo "[$level] $message$ctx\n";

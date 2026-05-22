@@ -8,7 +8,7 @@ use PHPUnit\Framework\TestCase;
 use WeArePlanet\PluginCore\LineItem\Exception\LineItemConsistencyException;
 use WeArePlanet\PluginCore\LineItem\LineItem;
 use WeArePlanet\PluginCore\LineItem\LineItemConsistencyService;
-use WeArePlanet\PluginCore\LineItem\RoundingStrategy as RoundingStrategyEnum;
+use WeArePlanet\PluginCore\LineItem\RoundingStrategy;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Settings\Settings;
 use WeArePlanet\PluginCore\Settings\SettingsProviderInterface;
@@ -17,7 +17,7 @@ class LineItemConsistencyServiceTest extends TestCase
 {
     private function createService(
         bool $enabled = true,
-        RoundingStrategyEnum $strategy = RoundingStrategyEnum::BY_LINE_ITEM,
+        RoundingStrategy $strategy = RoundingStrategy::BY_LINE_ITEM,
     ): LineItemConsistencyService {
         $provider = $this->createMock(SettingsProviderInterface::class);
         $provider->method('getLineItemConsistencyEnabled')->willReturn($enabled);

@@ -36,8 +36,14 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
         $this->webhookListenerService = $this->sdkProvider->getService(SdkWebhookListenersService::class);
     }
 
-    public function createListener(int $spaceId, int $webhookUrlId, WebhookListenerEnum $entity, array $eventStates, string $name): int
-    {
+    public function createListener(
+        int $spaceId,
+        int $webhookUrlId,
+        WebhookListenerEnum $entity,
+        array $eventStates,
+        string $name,
+        bool $notifyEveryChange = false,
+    ): int {
         $this->logger->debug("Creating Webhook Listener in space $spaceId for URL ID $webhookUrlId. Entity: {$entity->value}, Name: $name");
 
         $sdkEntity = new SdkWebhookListenerCreate();
@@ -46,6 +52,7 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
         $sdkEntity->setEntity($entity->value);
         $sdkEntity->setEntityStates($eventStates);
         $sdkEntity->setState(SdkCreationEntityState::ACTIVE);
+        $sdkEntity->setNotifyEveryChange($notifyEveryChange);
 
         // V2: postWebhooksListeners
         $result = $this->webhookListenerService->postWebhooksListeners($spaceId, $sdkEntity);

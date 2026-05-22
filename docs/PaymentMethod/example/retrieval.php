@@ -18,16 +18,15 @@ require_once __DIR__ . '/../../../vendor/autoload.php';
 // The example requires a logger and settings provider to function. 
 // These helper classes simulate a typical integration environment.
 
+use WeArePlanet\PluginCore\LineItem\RoundingStrategy;
+use WeArePlanet\PluginCore\Log\LoggerInterface;
+use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodRepositoryInterface;
+use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodService;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\PaymentMethodGateway;
+use WeArePlanet\PluginCore\Settings\IntegrationMode;
 use WeArePlanet\PluginCore\Settings\Settings;
 use WeArePlanet\PluginCore\Settings\SettingsProviderInterface;
-use WeArePlanet\PluginCore\Settings\IntegrationMode as IntegrationModeEnum;
-use WeArePlanet\PluginCore\LineItem\RoundingStrategy as RoundingStrategyEnum;
-use WeArePlanet\PluginCore\Log\LoggerInterface;
-use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodService;
-
-use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodRepositoryInterface;
 
 // --- Helper Classes (Simulating the environment) ---
 
@@ -72,7 +71,10 @@ class SimpleLogger implements LoggerInterface
     public function debug(string|\Stringable $message, array $context = []): void
     { /* echo "[DEBUG] $message\n"; */
     }
-    public function log($level, string|\Stringable $message, array $context = []): void
+    /**
+     * Standard implementation of PSR-3 log method with mixed level type.
+     */
+    public function log(mixed $level, string|\Stringable $message, array $context = [],): void
     {
         echo "[$level] $message\n";
     }
@@ -104,13 +106,13 @@ class EnvSettingsProvider implements SettingsProviderInterface
     {
         return true;
     }
-    public function getLineItemRoundingStrategy(): ?RoundingStrategyEnum
+    public function getLineItemRoundingStrategy(): ?RoundingStrategy
     {
-        return RoundingStrategyEnum::BY_LINE_ITEM;
+        return RoundingStrategy::BY_LINE_ITEM;
     }
-    public function getIntegrationMode(): IntegrationModeEnum
+    public function getIntegrationMode(): IntegrationMode
     {
-        return IntegrationModeEnum::PAYMENT_PAGE;
+        return IntegrationMode::PAYMENT_PAGE;
     }
     public function getBaseUrl(): ?string
     {

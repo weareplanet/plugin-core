@@ -5,29 +5,30 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\Webhook;
 
 use WeArePlanet\PluginCore\Render\JsonStringableTrait;
+use WeArePlanet\PluginCore\Webhook\Enum\WebhookListener as WebhookListenerEnum;
 
 /**
  * Class WebhookConfig
  *
- * Value object representing the configuration for a webhook.
+ * Value object representing the configuration for a webhook subscription.
+ * Each config defines which entity and states to listen for,
+ * and where to send the notification.
  */
 class WebhookConfig
 {
     use JsonStringableTrait;
 
     /**
-     * WebhookConfig constructor.
-     *
      * @param string $url The endpoint URL for the webhook.
      * @param string $name A unique internal name for this webhook.
-     * @param int $entityId The ID of the entity to listen to (e.g., Transaction ID).
-     * @param int $eventStateId The ID of the state that triggers the event.
+     * @param WebhookListenerEnum $entity The entity type to listen to (e.g., Transaction).
+     * @param array<string> $eventStates The list of states that trigger the event.
      */
     public function __construct(
         public readonly string $url,
         public readonly string $name,
-        public readonly int $entityId,
-        public readonly string $eventStateId,
+        public readonly WebhookListenerEnum $entity,
+        public readonly array $eventStates,
     ) {
     }
 }

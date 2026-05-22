@@ -10,6 +10,7 @@ use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Transaction\State as TransactionState;
 use WeArePlanet\PluginCore\Webhook\Enum\WebhookListener;
 use WeArePlanet\PluginCore\Webhook\WebhookConfig;
+use WeArePlanet\PluginCore\Webhook\WebhookListener as WebhookListenerDto;
 use WeArePlanet\PluginCore\Webhook\WebhookManagementGatewayInterface;
 use WeArePlanet\PluginCore\Webhook\WebhookService;
 use WeArePlanet\PluginCore\Webhook\WebhookSignatureGatewayInterface;
@@ -21,10 +22,10 @@ use WeArePlanet\PluginCore\Webhook\WebhookSignatureGatewayInterface;
  */
 class WebhookServiceTest extends TestCase
 {
-    private MockObject|WebhookManagementGatewayInterface $managementGateway;
-    private MockObject|WebhookSignatureGatewayInterface $signatureGateway;
-    private MockObject|LoggerInterface $logger;
+    private LoggerInterface|MockObject $logger;
+    private WebhookManagementGatewayInterface|MockObject $managementGateway;
     private WebhookService $service;
+    private WebhookSignatureGatewayInterface|MockObject $signatureGateway;
 
     protected function setUp(): void
     {
@@ -40,165 +41,26 @@ class WebhookServiceTest extends TestCase
     }
 
     /**
-     * Test successful installation flow.
+     * Test createWebhookListener delegation.
      */
-    public function testInstallWebhook(): void
+    public function testCreateWebhookListener(): void
     {
         $spaceId = 123;
-        $config = new WebhookConfig(
-            'https://example.com/webhook',
-            'Test Webhook',
-            WebhookListener::TRANSACTION->value,
-            TransactionState::AUTHORIZED->value,
-        );
+        $urlId = 99;
+        $entityEnum = WebhookListener::TRANSACTION;
+        $eventStates = ['active'];
+        $name = 'Listener';
+        $expectedId = 100;
 
-        $this->managementGateway->expects($this->once())
-            ->method('createUrl')
-            ->with($spaceId, $config->url, $config->name)
-            ->willReturn(99);
-
-        // Expect Enum and Array state
         $this->managementGateway->expects($this->once())
             ->method('createListener')
-            ->with($spaceId, 99, WebhookListener::TRANSACTION, [$config->eventStateId], $config->name)
-            ->willReturn(100);
+            ->with($spaceId, $urlId, $entityEnum, $eventStates, $name)
+            ->willReturn($expectedId);
 
-        // Expect getUrl call
-        $expectedUrl = new \WeArePlanet\PluginCore\Webhook\WebhookUrl(99, $config->name, $config->url, 1);
-        $this->managementGateway->expects($this->once())
-            ->method('getUrl')
-            ->with($spaceId, 99)
-            ->willReturn($expectedUrl);
-
-        $this->logger->expects($this->atLeastOnce())
-            ->method('debug');
-
-        $result = $this->service->installWebhook($spaceId, $config);
-        $this->assertSame($expectedUrl, $result);
+        $result = $this->service->createWebhookListener($spaceId, $urlId, $entityEnum, $eventStates, $name);
+        $this->assertEquals($expectedId, $result);
     }
 
-    /**
-     * Test successful uninstallation flow.
-     */
-    public function testUninstallWebhook(): void
-    {
-        $spaceId = 123;
-        $urlId = 99;
-        $entityId = WebhookListener::TRANSACTION->value;
-        $stateId = 'active';
-        $listenerId = 100;
-
-        // Mock getting listeners to find ID using DTO
-        $listenerDTO = new \WeArePlanet\PluginCore\Webhook\WebhookListener(
-            $listenerId,
-            'Test Listener',
-            $entityId,
-            [$stateId],
-        );
-
-        $this->managementGateway->expects($this->once())
-            ->method('getWebhookListeners')
-            ->with($spaceId, $urlId)
-            ->willReturn([$listenerDTO]);
-
-        $this->managementGateway->expects($this->once())
-            ->method('deleteListener')
-            ->with($spaceId, $listenerId);
-
-        $this->managementGateway->expects($this->once())
-            ->method('deleteUrl')
-            ->with($spaceId, $urlId);
-
-        $this->service->uninstallWebhook($spaceId, $urlId, WebhookListener::TRANSACTION, $stateId);
-    }
-
-    /**
-     * Test uninstallation flow when listener deletion fails.
-     */
-    public function testUninstallWebhookListenerFailureStillDeletesUrl(): void
-    {
-        $spaceId = 123;
-        $urlId = 99;
-        // $listenerId = 100; // Resolved dynamically now
-        $entityId = WebhookListener::TRANSACTION->value;
-        $stateId = 'active';
-        $listenerId = 100;
-
-        $listenerDTO = new \WeArePlanet\PluginCore\Webhook\WebhookListener(
-            $listenerId,
-            'Test Listener',
-            $entityId,
-            [$stateId],
-        );
-
-        $this->managementGateway->expects($this->once())
-            ->method('getWebhookListeners')
-            ->with($spaceId, $urlId)
-            ->willReturn([$listenerDTO]);
-
-        $this->managementGateway->expects($this->once())
-            ->method('deleteListener')
-            ->willThrowException(new \Exception("Delete listener failed"));
-
-        $this->managementGateway->expects($this->once())
-            ->method('deleteUrl')
-            ->with($spaceId, $urlId);
-
-        $this->service->uninstallWebhook($spaceId, $urlId, WebhookListener::TRANSACTION, $stateId);
-    }
-
-    /**
-     * Test successful update flow.
-     */
-    public function testUpdateWebhookUrl(): void
-    {
-        $spaceId = 123;
-        $urlId = 99;
-        $newUrl = 'https://example.com/new-url';
-
-        $this->managementGateway->expects($this->once())
-            ->method('updateUrl')
-            ->with($spaceId, $urlId, $newUrl);
-
-        $this->service->updateWebhookUrl($spaceId, $urlId, $newUrl);
-    }
-
-    /**
-     * Test signature validation success.
-     */
-    public function testValidatePayloadSuccess(): void
-    {
-        $signature = 'valid-signature';
-        $payload = '{"test": "data"}';
-
-        $this->signatureGateway->expects($this->once())
-            ->method('validate')
-            ->with($signature, $payload)
-            ->willReturn(true);
-
-        $result = $this->service->validatePayload($signature, $payload);
-        $this->assertTrue($result);
-    }
-
-    /**
-     * Test signature validation failure.
-     */
-    public function testValidatePayloadFailure(): void
-    {
-        $signature = 'invalid-signature';
-        $payload = '{"test": "data"}';
-
-        $this->signatureGateway->expects($this->once())
-            ->method('validate')
-            ->with($signature, $payload)
-            ->willReturn(false);
-
-        $this->logger->expects($this->once())
-            ->method('warning');
-
-        $result = $this->service->validatePayload($signature, $payload);
-        $this->assertFalse($result);
-    }
     /**
      * Test createWebhookUrl delegation.
      */
@@ -219,41 +81,18 @@ class WebhookServiceTest extends TestCase
     }
 
     /**
-     * Test createWebhookListener delegation.
+     * Test deleteWebhookListener delegation.
      */
-    public function testCreateWebhookListener(): void
-    {
-        $spaceId = 123;
-        $urlId = 99;
-        $entityEnum = \WeArePlanet\PluginCore\Webhook\Enum\WebhookListener::TRANSACTION;
-        $stateId = 'active';
-        $name = 'Listener';
-        $expectedId = 100;
-
-        $this->managementGateway->expects($this->once())
-            ->method('createListener')
-            ->with($spaceId, $urlId, $entityEnum, [$stateId], $name)
-            ->willReturn($expectedId);
-
-        $result = $this->service->createWebhookListener($spaceId, $urlId, $entityEnum, [$stateId], $name);
-        $this->assertEquals($expectedId, $result);
-    }
-
-    /**
-     * Test updateWebhookListener delegation.
-     */
-    public function testUpdateWebhookListener(): void
+    public function testDeleteWebhookListener(): void
     {
         $spaceId = 123;
         $listenerId = 100;
-        $entityEnum = \WeArePlanet\PluginCore\Webhook\Enum\WebhookListener::TRANSACTION;
-        $stateId = 'active';
 
         $this->managementGateway->expects($this->once())
-            ->method('updateListener')
-            ->with($spaceId, $listenerId, $entityEnum, [$stateId]);
+            ->method('deleteListener')
+            ->with($spaceId, $listenerId);
 
-        $this->service->updateWebhookListener($spaceId, $listenerId, $entityEnum, $stateId);
+        $this->service->deleteWebhookListener($spaceId, $listenerId);
     }
 
     /**
@@ -272,21 +111,6 @@ class WebhookServiceTest extends TestCase
     }
 
     /**
-     * Test deleteWebhookListener delegation.
-     */
-    public function testDeleteWebhookListener(): void
-    {
-        $spaceId = 123;
-        $listenerId = 100;
-
-        $this->managementGateway->expects($this->once())
-            ->method('deleteListener')
-            ->with($spaceId, $listenerId);
-
-        $this->service->deleteWebhookListener($spaceId, $listenerId);
-    }
-
-    /**
      * Test cascade deletion logic in deleteWebhookUrl.
      */
     public function testDeleteWebhookUrlWithCascade(): void
@@ -294,9 +118,9 @@ class WebhookServiceTest extends TestCase
         $spaceId = 123;
         $urlId = 99;
 
-        // Use DTOs with guaranteed IDs
-        $listener1 = new \WeArePlanet\PluginCore\Webhook\WebhookListener(101, 'L1', 1, []);
-        $listener2 = new \WeArePlanet\PluginCore\Webhook\WebhookListener(102, 'L2', 1, []);
+        // Use proper DTOs for the return value
+        $listener1 = new WebhookListenerDto(101, 'L1', 1, []);
+        $listener2 = new WebhookListenerDto(102, 'L2', 1, []);
 
         $this->managementGateway->expects($this->once())
             ->method('getWebhookListeners')
@@ -321,5 +145,180 @@ class WebhookServiceTest extends TestCase
 
         $result = $this->service->deleteWebhookUrl($spaceId, $urlId, true);
         $this->assertEquals(2, $result);
+    }
+
+    /**
+     * Test getWebhookUrls delegates to gateway with provided state.
+     */
+    public function testGetWebhookUrls(): void
+    {
+        $spaceId = 123;
+        $state = 'INACTIVE';
+        $expectedUrls = [new \WeArePlanet\PluginCore\Webhook\WebhookUrl(1, 'Test', 'url', 1)];
+
+        $this->managementGateway->expects($this->once())
+            ->method('getWebhookUrls')
+            ->with($spaceId, $state)
+            ->willReturn($expectedUrls);
+
+        $result = $this->service->getWebhookUrls($spaceId, $state);
+        $this->assertSame($expectedUrls, $result);
+    }
+
+    /**
+     * Test successful installation flow.
+     */
+    public function testInstallWebhook(): void
+    {
+        $spaceId = 123;
+        $config = new WebhookConfig(
+            'https://example.com/webhook',
+            'Test Webhook',
+            WebhookListener::TRANSACTION,
+            [TransactionState::AUTHORIZED->value],
+        );
+
+        $this->managementGateway->expects($this->once())
+            ->method('createUrl')
+            ->with($spaceId, $config->url, $config->name)
+            ->willReturn(99);
+
+        // Updated expectation: pass enum object and array
+        $this->managementGateway->expects($this->once())
+            ->method('createListener')
+            ->with($spaceId, 99, $config->entity, $config->eventStates, $config->name)
+            ->willReturn(100);
+
+        $this->logger->expects($this->atLeastOnce())
+            ->method('debug');
+
+        $this->service->installWebhook($spaceId, $config);
+    }
+
+    /**
+     * Test listUrls delegates to getWebhookUrls with null state.
+     */
+    public function testListUrls(): void
+    {
+        $spaceId = 123;
+        $expectedUrls = [new \WeArePlanet\PluginCore\Webhook\WebhookUrl(1, 'Test', 'url', 1)];
+
+        $this->managementGateway->expects($this->once())
+            ->method('getWebhookUrls')
+            ->with($spaceId, null)
+            ->willReturn($expectedUrls);
+
+        $result = $this->service->listUrls($spaceId);
+        $this->assertSame($expectedUrls, $result);
+    }
+
+    /**
+     * Test successful uninstallation flow.
+     */
+    public function testUninstallWebhook(): void
+    {
+        $spaceId = 123;
+        $urlId = 99;
+        $listenerId = 100;
+
+        $this->managementGateway->expects($this->once())
+            ->method('deleteListener')
+            ->with($spaceId, $listenerId);
+
+        $this->managementGateway->expects($this->once())
+            ->method('deleteUrl')
+            ->with($spaceId, $urlId);
+
+        $this->service->uninstallWebhook($spaceId, $urlId, $listenerId);
+    }
+
+    /**
+     * Test uninstallation flow when listener deletion fails.
+     */
+    public function testUninstallWebhookListenerFailureStillDeletesUrl(): void
+    {
+        $spaceId = 123;
+        $urlId = 99;
+        $listenerId = 100;
+
+        $this->managementGateway->expects($this->once())
+            ->method('deleteListener')
+            ->willThrowException(new \Exception("Delete listener failed"));
+
+        $this->managementGateway->expects($this->once())
+            ->method('deleteUrl')
+            ->with($spaceId, $urlId);
+
+        $this->service->uninstallWebhook($spaceId, $urlId, $listenerId);
+    }
+
+    /**
+     * Test updateWebhookListener delegation.
+     */
+    public function testUpdateWebhookListener(): void
+    {
+        $spaceId = 123;
+        $listenerId = 100;
+        $entityEnum = WebhookListener::TRANSACTION;
+        $eventStates = ['active'];
+
+        $this->managementGateway->expects($this->once())
+            ->method('updateListener')
+            ->with($spaceId, $listenerId, $entityEnum, $eventStates);
+
+        $this->service->updateWebhookListener($spaceId, $listenerId, $entityEnum, $eventStates);
+    }
+
+    /**
+     * Test successful update flow.
+     */
+    public function testUpdateWebhookUrl(): void
+    {
+        $spaceId = 123;
+        $urlId = 99;
+        $newUrl = 'https://example.com/new-url';
+
+        $this->managementGateway->expects($this->once())
+            ->method('updateUrl')
+            ->with($spaceId, $urlId, $newUrl);
+
+        $this->service->updateWebhookUrl($spaceId, $urlId, $newUrl);
+    }
+
+    /**
+     * Test signature validation failure.
+     */
+    public function testValidatePayloadFailure(): void
+    {
+        $signature = 'invalid-signature';
+        $payload = '{"test": "data"}';
+
+        $this->signatureGateway->expects($this->once())
+            ->method('validate')
+            ->with($signature, $payload)
+            ->willReturn(false);
+
+        $this->logger->expects($this->once())
+            ->method('warning');
+
+        $result = $this->service->validatePayload($signature, $payload);
+        $this->assertFalse($result);
+    }
+
+    /**
+     * Test signature validation success.
+     */
+    public function testValidatePayloadSuccess(): void
+    {
+        $signature = 'valid-signature';
+        $payload = '{"test": "data"}';
+
+        $this->signatureGateway->expects($this->once())
+            ->method('validate')
+            ->with($signature, $payload)
+            ->willReturn(true);
+
+        $result = $this->service->validatePayload($signature, $payload);
+        $this->assertTrue($result);
     }
 }

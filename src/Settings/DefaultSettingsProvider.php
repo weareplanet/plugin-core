@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Settings;
 
-use WeArePlanet\PluginCore\LineItem\RoundingStrategy as RoundingStrategyEnum;
-use WeArePlanet\PluginCore\Settings\IntegrationMode as IntegrationModeEnum;
+use WeArePlanet\PluginCore\LineItem\RoundingStrategy;
+use WeArePlanet\PluginCore\Settings\IntegrationMode;
 
 /**
  * Default base class for Settings Providers.
@@ -30,10 +30,10 @@ abstract class DefaultSettingsProvider implements SettingsProviderInterface
         return null;
     }
 
-    public function getIntegrationMode(): IntegrationModeEnum
+    public function getIntegrationMode(): IntegrationMode
     {
         // Default to the standard Hosted Payment Page
-        return IntegrationModeEnum::PAYMENT_PAGE;
+        return IntegrationMode::PAYMENT_PAGE;
     }
 
     public function getBaseUrl(): ?string
@@ -48,7 +48,7 @@ abstract class DefaultSettingsProvider implements SettingsProviderInterface
         return null;
     }
 
-    public function getLineItemRoundingStrategy(): ?RoundingStrategyEnum
+    public function getLineItemRoundingStrategy(): ?RoundingStrategy
     {
         // Return null to let the Settings class default to BY_LINE_ITEM
         return null;

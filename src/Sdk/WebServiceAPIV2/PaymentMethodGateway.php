@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV2;
 
+use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethod;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodGatewayInterface;
-use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
+use WeArePlanet\PluginCore\PaymentMethod\State;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
+use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
 use WeArePlanet\Sdk\Model\PaymentMethodConfiguration as SdkPaymentMethodConfiguration;
 use WeArePlanet\Sdk\Service\PaymentMethodConfigurationsService as SdkPaymentMethodConfigurationService;
 
@@ -87,30 +89,13 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
     private function mapToEntity(SdkPaymentMethodConfiguration $config): PaymentMethod
     {
         return new PaymentMethod(
-            id: (int)$config->getId(),
-            spaceId: (int)$config->getLinkedSpaceId(),
-            state: (string)$config->getState(),
-            name: $this->resolveLocalization($config->getResolvedTitle() ?? $config->getName()),
-            title: $config->getResolvedTitle() ?? [],
-            description: $this->resolveLocalization($config->getResolvedDescription() ?? $config->getDescription()),
-            descriptionMap: $config->getResolvedDescription() ?? $config->getDescription() ?? [],
-            sortOrder: (int)$config->getSortOrder(),
+            id: (int) $config->getId(),
+            spaceId: (int) $config->getLinkedSpaceId(),
+            state: State::from((string) $config->getState()),
+            title: new LocalizedString($config->getResolvedTitle() ?? $config->getName()),
+            description: new LocalizedString($config->getResolvedDescription() ?? $config->getDescription()),
+            sortOrder: (int) $config->getSortOrder(),
             imageUrl: $config->getResolvedImageUrl(),
         );
-    }
-
-    /**
-     * Resolves a localized string (which might be an array) to a single string.
-     *
-     * @param array<string, string>|string|null $input
-     * @return string|null
-     */
-    private function resolveLocalization(array|string|null $input): ?string
-    {
-        if (!is_array($input)) {
-            return $input;
-        }
-
-        return $input['en-US'] ?? $input['en-GB'] ?? reset($input) ?: null;
     }
 }

@@ -28,9 +28,12 @@ if (interface_exists(\Psr\Log\LoggerInterface::class)) {
         /** @param array<string, mixed> $context */
         public function debug(string|\Stringable $message, array $context = []): void;
         /**
-         * @param string|int $level
+         * Logs a message with an arbitrary level to match the PSR-3 specification,
+         * which expects a mixed level parameter typehint.
+         *
+         * @param mixed $level
          * @param array<string, mixed> $context
          */
-        public function log($level, string|\Stringable $message, array $context = []): void;
+        public function log(mixed $level, string|\Stringable $message, array $context = []): void;
     }
 }

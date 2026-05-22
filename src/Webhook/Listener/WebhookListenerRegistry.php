@@ -20,14 +20,22 @@ class WebhookListenerRegistry
     private array $listeners = [];
 
     /**
+     * @var array<string, bool>
+     */
+    private array $notifyEveryChange = [];
+
+    /**
      * Registers a listener for a specific webhook name and state.
      *
      * @param WebhookListener $name The name of the webhook (e.g., WebhookName::Transaction).
      * @param string $state The state of the webhook (e.g., 'COMPLETED').
      * @param WebhookListenerInterface $listener The listener instance to handle this event.
      */
-    public function addListener(WebhookListener $name, string $state, WebhookListenerInterface $listener): void
-    {
+    public function addListener(
+        WebhookListener $name,
+        string $state,
+        WebhookListenerInterface $listener,
+    ): void {
         $this->listeners[$name->value][$state] = $listener;
     }
 
@@ -38,21 +46,11 @@ class WebhookListenerRegistry
      * @param string $state The state of the webhook.
      * @return WebhookListenerInterface|null The matching listener, or null if none is found.
      */
-    public function findListener(WebhookListener $name, string $state): ?WebhookListenerInterface
-    {
+    public function findListener(
+        WebhookListener $name,
+        string $state,
+    ): ?WebhookListenerInterface {
         return $this->listeners[$name->value][$state] ?? null;
-    }
-
-    /**
-     * Checks if a webhook listener with the given name and state exists in the registry.
-     *
-     * @param WebhookListener $name The webhook listener instance to check for.
-     * @param string $state The state associated with the listener.
-     * @return bool Returns true if the listener with the specified state exists, false otherwise.
-     */
-    public function hasListener(WebhookListener $name, string $state): bool
-    {
-        return isset($this->listeners[$name->value][$state]);
     }
 
     /**
@@ -63,5 +61,44 @@ class WebhookListenerRegistry
     public function getAllListeners(): array
     {
         return $this->listeners;
+    }
+
+    /**
+     * Returns whether a webhook entity is configured to notify on every change.
+     *
+     * @param WebhookListener $name The webhook entity.
+     * @return bool Returns false by default if no value was explicitly set.
+     */
+    public function getNotifyEveryChange(
+        WebhookListener $name,
+    ): bool {
+        return $this->notifyEveryChange[$name->value] ?? false;
+    }
+
+    /**
+     * Checks if a webhook listener with the given name and state exists in the registry.
+     *
+     * @param WebhookListener $name The webhook listener instance to check for.
+     * @param string $state The state associated with the listener.
+     * @return bool Returns true if the listener with the specified state exists, false otherwise.
+     */
+    public function hasListener(
+        WebhookListener $name,
+        string $state,
+    ): bool {
+        return isset($this->listeners[$name->value][$state]);
+    }
+
+    /**
+     * Marks a webhook entity to notify on every change instead of only on state transitions.
+     *
+     * @param WebhookListener $name The webhook entity to configure.
+     * @param bool $notifyEveryChange Whether the entity should notify on every change.
+     */
+    public function setNotifyEveryChange(
+        WebhookListener $name,
+        bool $notifyEveryChange,
+    ): void {
+        $this->notifyEveryChange[$name->value] = $notifyEveryChange;
     }
 }
