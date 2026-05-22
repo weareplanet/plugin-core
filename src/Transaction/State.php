@@ -48,7 +48,6 @@ enum State: string
     case AUTHORIZED = 'AUTHORIZED';
     case COMPLETED = 'COMPLETED';
     case CONFIRMED = 'CONFIRMED';
-
     case CREATE = 'CREATE';
     case DECLINE = 'DECLINE';
     case FAILED = 'FAILED';

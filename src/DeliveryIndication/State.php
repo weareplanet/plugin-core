@@ -35,7 +35,6 @@ enum State: string
     }
     case MANUAL_CHECK_REQUIRED = 'MANUAL_CHECK_REQUIRED';
     case NOT_SUITABLE = 'NOT_SUITABLE';
-
     case PENDING = 'PENDING';
     case SUITABLE = 'SUITABLE';
 }

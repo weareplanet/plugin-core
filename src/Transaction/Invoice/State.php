@@ -40,7 +40,6 @@ enum State: string
         ];
     }
     case CANCELED = 'CANCELED';
-
     case CREATE = 'CREATE';
     case DERECOGNIZED = 'DERECOGNIZED';
     case NOT_APPLICABLE = 'NOT_APPLICABLE';

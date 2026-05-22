@@ -9,9 +9,11 @@ use PHPUnit\Framework\TestCase;
 use WeArePlanet\PluginCore\Address\Address;
 use WeArePlanet\PluginCore\LineItem\LineItem;
 use WeArePlanet\PluginCore\LineItem\LineItemConsistencyService;
+use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethod;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodSorting;
+use WeArePlanet\PluginCore\PaymentMethod\State as PaymentMethodState;
 use WeArePlanet\PluginCore\Settings\Settings;
 use WeArePlanet\PluginCore\Transaction\State;
 use WeArePlanet\PluginCore\Transaction\Transaction;
@@ -154,14 +156,13 @@ class TransactionServiceTest extends TestCase
         $spaceId = 123;
         $transactionId = 456;
 
+        // Same sortOrder, different names — tie-breaker should sort alphabetically
         $methodA = new PaymentMethod(
             id: 1,
             spaceId: $spaceId,
-            state: 'active',
-            name: 'Zeus Payment',
-            title: ['en-US' => 'Zeus Payment'],
-            description: 'Desc',
-            descriptionMap: ['en-US' => 'Desc'],
+            state: PaymentMethodState::ACTIVE,
+            title: new LocalizedString(['en-US' => 'Zeus Payment']),
+            description: new LocalizedString(['en-US' => 'Desc']),
             sortOrder: 1,
             imageUrl: null,
         );
@@ -169,28 +170,39 @@ class TransactionServiceTest extends TestCase
         $methodB = new PaymentMethod(
             id: 2,
             spaceId: $spaceId,
-            state: 'active',
-            name: 'Apollo Payment',
-            title: ['en-US' => 'Apollo Payment'],
-            description: 'Desc',
-            descriptionMap: ['en-US' => 'Desc'],
+            state: PaymentMethodState::ACTIVE,
+            title: new LocalizedString(['en-US' => 'Apollo Payment']),
+            description: new LocalizedString(['en-US' => 'Desc']),
             sortOrder: 1,
             imageUrl: null,
         );
 
-        // Gateway returns unsorted (Z then A)
+        // Different sortOrder — primary sort should win regardless of name
+        $methodC = new PaymentMethod(
+            id: 3,
+            spaceId: $spaceId,
+            state: PaymentMethodState::ACTIVE,
+            title: new LocalizedString(['en-US' => 'AAA First Alphabetically']),
+            description: new LocalizedString(null),
+            sortOrder: 99,
+            imageUrl: null,
+        );
+
+        // Gateway returns unsorted
         $this->gateway->method('getAvailablePaymentMethods')
-            ->willReturn([$methodA, $methodB]);
+            ->willReturn([$methodC, $methodA, $methodB]);
 
-        // 1. Default (No Sort)
+        // Default (No Sort) — preserves gateway order
         $default = $this->service->getAvailablePaymentMethods($spaceId, $transactionId, PaymentMethodSorting::DEFAULT);
-        $this->assertSame($methodA, $default[0]); // Z
-        $this->assertSame($methodB, $default[1]); // A
+        $this->assertSame($methodC, $default[0]);
+        $this->assertSame($methodA, $default[1]);
+        $this->assertSame($methodB, $default[2]);
 
-        // 2. Sorted by Name
+        // Sorted by Name — primary: sortOrder, secondary: alphabetical title
         $sorted = $this->service->getAvailablePaymentMethods($spaceId, $transactionId, PaymentMethodSorting::NAME);
-        $this->assertSame($methodB, $sorted[0]); // A
-        $this->assertSame($methodA, $sorted[1]); // Z
+        $this->assertSame($methodB, $sorted[0]); // sortOrder=1, "Apollo"
+        $this->assertSame($methodA, $sorted[1]); // sortOrder=1, "Zeus"
+        $this->assertSame($methodC, $sorted[2]); // sortOrder=99, despite alphabetically first
     }
 
     public function testGetLatestTransactionsDelegatesToGatewayWithDefaults(): void

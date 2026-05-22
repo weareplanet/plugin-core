@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Settings;
 
-use WeArePlanet\PluginCore\LineItem\RoundingStrategy as RoundingStrategyEnum;
+use WeArePlanet\PluginCore\LineItem\RoundingStrategy;
 
 /**
  * Interface for providing configuration settings needed by plugin-core.
@@ -33,7 +33,7 @@ interface SettingsProviderInterface
     /**
      * The rounding strategy code (e.g., 'BY_LINE_ITEM' or 'BY_TOTAL').
      */
-    public function getLineItemRoundingStrategy(): ?RoundingStrategyEnum;
+    public function getLineItemRoundingStrategy(): ?RoundingStrategy;
 
     /**
      * Gets the configured log level (e.g., 'INFO' or 'DEBUG').

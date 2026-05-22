@@ -144,6 +144,7 @@ class TransactionGatewayTest extends TestCase
         $sdkItem = new SdkConfiguration();
         $sdkItem->setId(55);
         $sdkItem->setLinkedSpaceId($spaceId);
+        $sdkItem->setState(\WeArePlanet\Sdk\Model\CreationEntityState::ACTIVE);
         $sdkItem->setResolvedTitle(['en-US' => 'Invoice']);
 
         // 3. Expect Gateway to pass 'iframe' string to SDK
@@ -166,6 +167,7 @@ class TransactionGatewayTest extends TestCase
         $sdkItem1 = new SdkConfiguration();
         $sdkItem1->setId(10);
         $sdkItem1->setLinkedSpaceId($spaceId);
+        $sdkItem1->setState(\WeArePlanet\Sdk\Model\CreationEntityState::ACTIVE);
         $sdkItem1->setResolvedTitle(['en-US' => 'Credit Card']);
         $sdkItem1->setResolvedDescription(['en-US' => 'Pay later']);
         $sdkItem1->setSortOrder(1);
@@ -256,8 +258,8 @@ class TransactionGatewayTest extends TestCase
 
         $transaction = $this->gateway->find($spaceId, $transactionId);
 
-        $this->assertEquals('Insufficient funds', $transaction->failureReason);
-        $this->assertEquals('Payment failed, please try again.', $transaction->userFailureMessage);
+        $this->assertEquals('Insufficient funds', $transaction->failureReason->localize('en-US'));
+        $this->assertEquals('Payment failed, please try again.', $transaction->userFailureMessage->localize('en-US'));
 
         $this->assertEquals($now->getTimestamp(), $transaction->createdOn->getTimestamp());
         $this->assertEquals($now->getTimestamp(), $transaction->failedOn->getTimestamp());

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV1;
 
+use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethod;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodGatewayInterface;
+use WeArePlanet\PluginCore\PaymentMethod\State;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\Sdk\Model\CreationEntityState as SdkCreationEntityState;
 use WeArePlanet\Sdk\Model\CriteriaOperator as SdkCriteriaOperator;
@@ -98,6 +100,9 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
     /**
      * Maps an SDK configuration to a domain entity.
      *
+     * The LocalizedString VO takes ownership of locale resolution,
+     * so we pass the raw SDK maps directly without pre-resolving.
+     *
      * @param SdkPaymentMethodConfiguration $config The SDK configuration.
      * @return PaymentMethod The domain entity.
      */
@@ -106,34 +111,11 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
         return new PaymentMethod(
             id: $config->getId(),
             spaceId: $config->getLinkedSpaceId(),
-            state: (string) $config->getState(), // Cast to string as state is usually an enum or string
-            //TODO: We need to check how to support different language codes.
-            name: $this->resolveLocalization($config->getResolvedTitle() ?? $config->getName()),
-            title: $config->getResolvedTitle() ?? [],
-            description: $this->resolveLocalization($config->getResolvedDescription() ?? $config->getDescription()),
-            descriptionMap: $config->getResolvedDescription() ?? $config->getDescription() ?? [],
+            state: State::from((string) $config->getState()),
+            title: new LocalizedString($config->getResolvedTitle() ?? $config->getName()),
+            description: new LocalizedString($config->getResolvedDescription() ?? $config->getDescription()),
             sortOrder: $config->getSortOrder(),
-            imageUrl: $config->getResolvedImageUrl(), // Assuming this exists or similar
+            imageUrl: $config->getResolvedImageUrl(),
         );
-    }
-
-    /**
-     * Resolves a localized string (which might be an array) to a single string.
-     *
-     * @param array<string, string>|string|null $input
-     * @return string|null
-     */
-    private function resolveLocalization(array|string|null $input): ?string
-    {
-        if (is_string($input) || is_null($input)) {
-            return $input;
-        }
-
-        if (is_array($input)) {
-            // Prefer English, fallback to first available
-            return $input['en-US'] ?? $input['en-GB'] ?? reset($input) ?: null;
-        }
-
-        return null;
     }
 }

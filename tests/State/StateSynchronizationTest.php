@@ -2,18 +2,20 @@
 
 declare(strict_types=1);
 
-namespace WeArePlanet\PluginCore\Tests\Webhook;
+namespace WeArePlanet\PluginCore\Tests\State;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use WeArePlanet\PluginCore\DeliveryIndication\State as PluginCoreDeliveryIndicationState;
 use WeArePlanet\PluginCore\ManualTask\State as PluginCoreManualTaskState;
+use WeArePlanet\PluginCore\PaymentMethod\State as PluginCorePaymentMethodState;
 use WeArePlanet\PluginCore\Refund\State as PluginCoreRefundState;
 use WeArePlanet\PluginCore\Token\Version\State as PluginCoreTokenVersionState;
 use WeArePlanet\PluginCore\Transaction\Completion\State as PluginCoreTransactionCompletionState;
 use WeArePlanet\PluginCore\Transaction\Invoice\State as PluginCoreTransactionInvoiceState;
 use WeArePlanet\PluginCore\Transaction\State as PluginCoreTransactionState;
 use WeArePlanet\PluginCore\Transaction\Void\State as PluginCoreTransactionVoidState;
+use WeArePlanet\Sdk\Model\CreationEntityState as SdkCreationEntityState;
 use WeArePlanet\Sdk\Model\DeliveryIndicationState as SdkDeliveryIndicationState;
 use WeArePlanet\Sdk\Model\ManualTaskState as SdkManualTaskState;
 use WeArePlanet\Sdk\Model\RefundState as SdkRefundState;
@@ -23,6 +25,12 @@ use WeArePlanet\Sdk\Model\TransactionInvoiceState as SdkTransactionInvoiceState;
 use WeArePlanet\Sdk\Model\TransactionState as SdkTransactionState;
 use WeArePlanet\Sdk\Model\TransactionVoidState as SdkTransactionVoidState;
 
+/**
+ * Contract test that guarantees PluginCore's internal enums stay in sync with the SDK.
+ *
+ * If the SDK introduces a new state that our enums don't cover, this test will
+ * fail immediately — preventing silent mapping bugs at runtime.
+ */
 class StateSynchronizationTest extends TestCase
 {
     /**
@@ -35,13 +43,17 @@ class StateSynchronizationTest extends TestCase
                 SdkDeliveryIndicationState::class,
                 PluginCoreDeliveryIndicationState::class,
             ],
-            'Refund States' => [
-                SdkRefundState::class,
-                PluginCoreRefundState::class,
-            ],
             'Manual Task States' => [
                 SdkManualTaskState::class,
                 PluginCoreManualTaskState::class,
+            ],
+            'Payment Method States' => [
+                SdkCreationEntityState::class,
+                PluginCorePaymentMethodState::class,
+            ],
+            'Refund States' => [
+                SdkRefundState::class,
+                PluginCoreRefundState::class,
             ],
             'Token Version States' => [
                 SdkTokenVersionState::class,

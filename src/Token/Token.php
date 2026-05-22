@@ -26,7 +26,7 @@ class Token
     /**
      * @var int The space ID.
      */
-    public int $spaceId;
+    public ?int $spaceId = null;
 
     /**
      * @var State The strict state enum.
@@ -36,5 +36,5 @@ class Token
     /**
      * @var int The version number.
      */
-    public int $version;
+    public ?int $version = null;
 }

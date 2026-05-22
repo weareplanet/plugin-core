@@ -6,6 +6,7 @@ namespace WeArePlanet\PluginCore\Transaction;
 
 use WeArePlanet\PluginCore\Address\Address;
 use WeArePlanet\PluginCore\LineItem\LineItem;
+use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Render\JsonStringableTrait;
 use WeArePlanet\PluginCore\Token\Token;
 
@@ -57,9 +58,9 @@ class Transaction
     public ?\DateTimeImmutable $failedOn = null;
 
     /**
-     * @var string|null The failure reason description.
+     * @var LocalizedString|null The localized failure reason from the API.
      */
-    public ?string $failureReason = null;
+    public ?LocalizedString $failureReason = null;
 
     /**
      * @var int The transaction ID.
@@ -107,12 +108,12 @@ class Transaction
     public ?Token $token = null;
 
     /**
-     * @var string|null The user-facing failure message.
+     * @var LocalizedString|null The localized user-facing failure message.
      */
-    public ?string $userFailureMessage = null;
+    public ?LocalizedString $userFailureMessage = null;
 
     /**
-     * @var int The version number required for optimistic locking (Read-Modify-Write).
+     * @var int|null The version number required for optimistic locking (Read-Modify-Write). Nullable for newly created, unsaved transactions.
      */
-    public int $version;
+    public ?int $version = null;
 }

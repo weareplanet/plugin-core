@@ -58,7 +58,7 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
      *
      * @inheritDoc
      */
-    public function createListener(int $spaceId, int $webhookUrlId, WebhookListenerEnum $entity, array $eventStates, string $name): int
+    public function createListener(int $spaceId, int $webhookUrlId, WebhookListenerEnum $entity, array $eventStates, string $name, bool $notifyEveryChange = false): int
     {
         $eventStatesList = implode(',', $eventStates);
         $this->logger->debug("Creating Webhook Listener in space $spaceId for URL ID $webhookUrlId. Entity: {$entity->name}, States: $eventStatesList, Name: $name");
@@ -72,6 +72,7 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
         // SDK v1's setEntityStates already accepts an array of state strings
         $listenerCreate->setEntityStates($eventStates);
         $listenerCreate->setState(SdkCreationEntityState::ACTIVE);
+        $listenerCreate->setNotifyEveryChange($notifyEveryChange);
 
         $result = $this->webhookListenerService->create($spaceId, $listenerCreate);
         return (int)$result->getId();

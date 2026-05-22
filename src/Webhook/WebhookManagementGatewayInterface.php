@@ -23,7 +23,7 @@ interface WebhookManagementGatewayInterface
      * @param string $name
      * @return int The ID of the created Webhook Listener.
      */
-    public function createListener(int $spaceId, int $webhookUrlId, WebhookListenerEnum $entity, array $eventStates, string $name): int;
+    public function createListener(int $spaceId, int $webhookUrlId, WebhookListenerEnum $entity, array $eventStates, string $name, bool $notifyEveryChange = false): int;
     /**
      * Creates a webhook URL definition in the portal.
      *

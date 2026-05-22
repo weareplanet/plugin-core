@@ -42,8 +42,8 @@ enum State: string
             ],
         ];
     }
-
     case ACTIVE = 'ACTIVE';
+
     case CREATE = 'CREATE';
     case DELETED = 'DELETED';
     case DELETING = 'DELETING';

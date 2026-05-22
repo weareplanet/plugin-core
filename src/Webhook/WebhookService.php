@@ -6,6 +6,7 @@ namespace WeArePlanet\PluginCore\Webhook;
 
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Webhook\Enum\WebhookListener as WebhookListenerEnum;
+use WeArePlanet\PluginCore\Webhook\Listener\WebhookListenerRegistry;
 
 /**
  * Class WebhookService
@@ -38,9 +39,9 @@ class WebhookService
      * @param string $name
      * @return int
      */
-    public function createWebhookListener(int $spaceId, int $urlId, WebhookListenerEnum $entity, array $eventStates, string $name): int
+    public function createWebhookListener(int $spaceId, int $urlId, WebhookListenerEnum $entity, array $eventStates, string $name, bool $notifyEveryChange = false): int
     {
-        $listenerId = $this->managementGateway->createListener($spaceId, $urlId, $entity, $eventStates, $name);
+        $listenerId = $this->managementGateway->createListener($spaceId, $urlId, $entity, $eventStates, $name, $notifyEveryChange);
         $this->logger->debug("Created Webhook Listener ID: $listenerId");
         return $listenerId;
     }
@@ -120,6 +121,42 @@ class WebhookService
     }
 
     /**
+     * Finds an existing listener for the given entity in the provided list.
+     *
+     * @param WebhookListenerEnum $entity
+     * @param WebhookListener[] $listeners
+     * @return WebhookListener|null
+     */
+    private function findListenerForEntity(WebhookListenerEnum $entity, array $listeners): ?WebhookListener
+    {
+        foreach ($listeners as $listener) {
+            if ($listener->entityId === $entity->value) {
+                return $listener;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Returns the ID of an existing webhook URL matching the given URL, or creates a new one.
+     *
+     * @param int $spaceId
+     * @param string $url
+     * @param string $name
+     * @return int
+     */
+    private function getOrCreateWebhookUrl(int $spaceId, string $url, string $name): int
+    {
+        foreach ($this->getWebhookUrls($spaceId) as $existingUrl) {
+            if ($existingUrl->url === $url) {
+                return $existingUrl->id;
+            }
+        }
+
+        return $this->createWebhookUrl($spaceId, $url, $name);
+    }
+
+    /**
      * Gets all webhook listeners for a specific URL.
      *
      * @param int $spaceId
@@ -178,6 +215,55 @@ class WebhookService
     public function listUrls(int $spaceId): array
     {
         return $this->getWebhookUrls($spaceId, null);
+    }
+
+    /**
+     * Synchronizes webhook listeners in the given space against the entities configured in the registry.
+     *
+     * Resolves (or creates) the webhook URL, then iterates over the registry to ensure that a listener
+     * exists for every configured entity. When $force is true, any pre-existing listener for an entity
+     * is deleted and recreated to pick up state list changes.
+     *
+     * @param int $spaceId
+     * @param string $url The endpoint URL the portal should call.
+     * @param string $namePrefix Prefix used for both the URL name and listener names (e.g. 'Magento 2').
+     * @param WebhookListenerRegistry $registry The registry holding configured entities and states.
+     * @param bool $force When true, recreates listeners that already exist.
+     * @return void
+     */
+    public function synchronizeWebhooks(
+        int $spaceId,
+        string $url,
+        string $namePrefix,
+        WebhookListenerRegistry $registry,
+        bool $force = false,
+    ): void {
+        $this->logger->debug("Synchronizing webhooks for Space $spaceId at URL $url.");
+
+        $urlId = $this->getOrCreateWebhookUrl($spaceId, $url, $namePrefix);
+        $existingListeners = $this->getWebhookListeners($spaceId, $urlId);
+
+        foreach ($registry->getAllListeners() as $entityValue => $stateMap) {
+            $entity = WebhookListenerEnum::from((int)$entityValue);
+            $states = array_keys($stateMap);
+
+            $existing = $this->findListenerForEntity($entity, $existingListeners);
+            if ($existing !== null) {
+                if (!$force) {
+                    continue;
+                }
+                $this->deleteWebhookListener($spaceId, $existing->id);
+            }
+
+            $this->createWebhookListener(
+                $spaceId,
+                $urlId,
+                $entity,
+                $states,
+                $namePrefix . ' ' . $entity->getTechnicalName(),
+                $registry->getNotifyEveryChange($entity),
+            );
+        }
     }
 
     /**

@@ -3,6 +3,7 @@
     "description": "Core functionality for the WeArePlanet plugins.",
     "type": "library",
     "license": "Apache-2.0",
+    "version": "0.1.2",
     "autoload": {
         "psr-4": {
             "WeArePlanet\\PluginCore\\": "src/"

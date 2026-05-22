@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Http;
 
+use Magento\Framework\App\RequestInterface as MagentoRequest;
+use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 use WeArePlanet\PluginCore\Render\JsonStringableTrait;
 
 class Request
@@ -53,10 +55,10 @@ class Request
      * Creates a Request instance from a Magento Request object.
      * This is used when the plugin is running within a Magento environment.
      *
-     * @param \Magento\Framework\App\RequestInterface $magentoRequest
+     * @param MagentoRequest $magentoRequest
      * @return self
      */
-    public static function fromMagentoRequest(\Magento\Framework\App\RequestInterface $magentoRequest): self
+    public static function fromMagentoRequest(MagentoRequest $magentoRequest): self
     {
         $headers = $magentoRequest->getHeaders()->toArray();
         $rawBody = (string) $magentoRequest->getContent();
@@ -69,10 +71,10 @@ class Request
      * Creates a Request instance from a Symfony Request object.
      * This allows the core logic to be compatible with Symfony-based frameworks (like PrestaShop).
      *
-     * @param \Symfony\Component\HttpFoundation\Request $symfonyRequest
+     * @param SymfonyRequest $symfonyRequest
      * @return self
      */
-    public static function fromSymfonyRequest(\Symfony\Component\HttpFoundation\Request $symfonyRequest): self
+    public static function fromSymfonyRequest(SymfonyRequest $symfonyRequest): self
     {
         $headers = $symfonyRequest->headers->all();
         $rawBody = $symfonyRequest->getContent();

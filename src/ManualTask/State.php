@@ -34,6 +34,5 @@ enum State: string
     }
     case DONE = 'DONE';
     case EXPIRED = 'EXPIRED';
-
     case OPEN = 'OPEN';
 }

@@ -30,7 +30,7 @@ if (interface_exists(\Psr\Log\LoggerInterface::class)) {
         public function info(string|\Stringable $message, array $context = []): void;
 
         /** @param array<string, mixed> $context */
-        public function log(string $level, string|\Stringable $message, array $context = []): void;
+        public function log(mixed $level, string|\Stringable $message, array $context = []): void;
 
         /** @param array<string, mixed> $context */
         public function notice(string|\Stringable $message, array $context = []): void;

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\LineItem;
 
 use WeArePlanet\PluginCore\LineItem\Exception\LineItemConsistencyException;
-use WeArePlanet\PluginCore\LineItem\RoundingStrategy as RoundingStrategyEnum;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Settings\Settings;
 
@@ -40,7 +39,7 @@ class LineItemConsistencyService
 
         $sum = 0.0;
         foreach ($lineItems as $item) {
-            if ($strategy === RoundingStrategyEnum::BY_LINE_ITEM) {
+            if ($strategy === RoundingStrategy::BY_LINE_ITEM) {
                 // Rounding each line item individually avoids large discrepancies
                 // in shops that calculate tax per item.
                 $sum += round($item->amountIncludingTax, 2);

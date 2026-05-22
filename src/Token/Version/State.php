@@ -34,6 +34,5 @@ enum State: string
     }
     case ACTIVE = 'ACTIVE';
     case OBSOLETE = 'OBSOLETE';
-
     case UNINITIALIZED = 'UNINITIALIZED';
 }
