@@ -7,9 +7,15 @@ namespace WeArePlanet\PluginCore\Webhook;
 use WeArePlanet\PluginCore\Http\Request;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Settings\Settings;
-use WeArePlanet\PluginCore\Transaction\Transaction;
-use WeArePlanet\PluginCore\Transaction\TransactionGatewayInterface;
 use WeArePlanet\PluginCore\Webhook\Exception\CommandException;
+use WeArePlanet\Sdk\Service\DeliveryIndicationService;
+use WeArePlanet\Sdk\Service\ManualTaskService;
+use WeArePlanet\Sdk\Service\RefundService;
+use WeArePlanet\Sdk\Service\TokenService;
+use WeArePlanet\Sdk\Service\TransactionCompletionService;
+use WeArePlanet\Sdk\Service\TransactionInvoiceService;
+use WeArePlanet\Sdk\Service\TransactionService;
+use WeArePlanet\Sdk\Service\TransactionVoidService;
 use WeArePlanet\Sdk\Service\WebhookEncryptionService;
 
 /**
@@ -18,61 +24,117 @@ use WeArePlanet\Sdk\Service\WebhookEncryptionService;
 class DefaultStateFetcher implements StateFetcherInterface
 {
     /**
-     * @param SdkProvider $sdkProvider
-     * @param Settings $settings
-     * @param TransactionGatewayInterface $transactionGateway
+     * Constructs the DefaultStateFetcher.
+     *
+     * @param SdkProvider $sdkProvider The SDK provider.
+     * @param Settings $settings The plugin settings.
      */
     public function __construct(
         private readonly SdkProvider $sdkProvider,
         private readonly Settings $settings,
-        private readonly TransactionGatewayInterface $transactionGateway,
     ) {
     }
 
     /**
-     * @param Request $request
-     * @param int $entityId
-     * @return string
-     * @throws \Exception
+     * Fetches the state for the given webhook request.
+     *
+     * @param Request $request The incoming request object.
+     * @param int $entityId The ID of the entity.
+     * @return string The resolved state.
+     * @throws \Exception If the state cannot be fetched or validation fails.
      */
     public function fetchState(Request $request, int $entityId): string
     {
-        $signatureHeader = $request->getHeader('x-signature');
+        // Resolve signature header to determine if state is securely signed.
+        $signatureHeader = $request->getHeader('x-signature', );
 
         if ($signatureHeader) {
+            // Retrieve encryption service to validate the payload integrity.
             /** @var WebhookEncryptionService $encryptionService */
-            $encryptionService = $this->sdkProvider->getService(WebhookEncryptionService::class);
+            $encryptionService = $this->sdkProvider->getService(WebhookEncryptionService::class, );
 
-            // New way, signed state from webhook.
-            if ($encryptionService->isContentValid($signatureHeader, $request->getRawBody())) {
+            // Validating the signed body allows resolving the state without external API calls.
+            if ($encryptionService->isContentValid($signatureHeader, $request->getRawBody(), )) {
                 $body = $request->body;
                 if (empty($body['state'])) {
-                    throw new CommandException("Webhook payload is signed but missing 'state' field.");
+                    throw new CommandException("Webhook payload is signed but missing 'state' field.", );
                 }
                 return (string) $body['state'];
             }
 
-            throw new CommandException("Invalid webhook signature.");
+            throw new CommandException("Invalid webhook signature.", );
         }
 
-        // Legacy way, fetch state from Portal API (extra request(s)).
-        //TODO: Consider removing support for this way.
-        //TODO: It may not be always transaction, but other entity. It can be added by defining
-        // an interface for getting a state by id. For now, we assume transaction only.
+        // Without a signature, fall back to the legacy path which retrieves the state from the API.
+        $body = $request->body;
+        $technicalName = $body['listenerEntityTechnicalName'] ?? null;
+
+        // The technical name of the entity must be present to select the correct SDK service.
+        if (empty($technicalName)) {
+            throw new CommandException("Unsigned webhook payload missing 'listenerEntityTechnicalName'.", );
+        }
+
+        // Resolve the service class before the retry loop to avoid retrying unsupported entities.
+        $serviceClass = $this->getServiceClass((string) $technicalName, );
+
+        // Retry the API request to handle transient network issues or race conditions.
         $maxRetries = 10;
         for ($i = 0; $i < $maxRetries; $i++) {
             try {
-                /** @var Transaction $transaction */
-                $transaction = $this->transactionGateway->get($this->settings->getSpaceId(), $entityId);
-                return $transaction->state->value;
+                return $this->fetchStateFromApi(
+                    $serviceClass,
+                    $entityId,
+                );
             } catch (\Exception $e) {
+                // On last retry, propagate the exception to fail the command.
                 if ($i === $maxRetries - 1) {
                     throw $e;
                 }
-                sleep($i * 2);
+                sleep($i * 2, );
             }
         }
 
-        throw new CommandException("Failed to fetch state for entity $entityId after $maxRetries retries.");
+        throw new CommandException("Failed to fetch state for entity $entityId after $maxRetries retries.", );
+    }
+
+    /**
+     * Helper to dynamically fetch the remote state from the Portal API.
+     *
+     * @param class-string<object> $serviceClass The SDK service class name.
+     * @param int $entityId The ID of the entity.
+     * @return string The resolved remote state.
+     */
+    private function fetchStateFromApi(string $serviceClass, int $entityId): string
+    {
+        // Instantiate the service dynamically and perform the read operation.
+        $service = $this->sdkProvider->getService($serviceClass, );
+        $result = $service->read(
+            $this->settings->getSpaceId(),
+            $entityId,
+        );
+
+        return (string) $result->getState();
+    }
+
+    /**
+     * Maps the technical name of the entity to its corresponding SDK service class.
+     *
+     * @param string $technicalName The technical name of the entity.
+     * @return string The SDK service class name.
+     * @throws CommandException If the technical name is not supported.
+     */
+    private function getServiceClass(string $technicalName): string
+    {
+        return match ($technicalName) {
+            'DeliveryIndication' => DeliveryIndicationService::class,
+            'ManualTask' => ManualTaskService::class,
+            'Refund' => RefundService::class,
+            'Token' => TokenService::class,
+            'Transaction' => TransactionService::class,
+            'TransactionCompletion' => TransactionCompletionService::class,
+            'TransactionInvoice' => TransactionInvoiceService::class,
+            'TransactionVoid' => TransactionVoidService::class,
+            default => throw new CommandException("Legacy state fetching not supported for entity: " . $technicalName, ),
+        };
     }
 }
