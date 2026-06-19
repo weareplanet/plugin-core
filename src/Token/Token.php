@@ -14,6 +14,11 @@ class Token
     use JsonStringableTrait;
 
     /**
+     * @var \DateTimeImmutable|null The date/time when the token was created.
+     */
+    public ?\DateTimeImmutable $createdOn = null;
+
+    /**
      * @var string|null A customer-facing identifier for this token (e.g. masked card).
      */
     public ?string $customerIdentifier = null;

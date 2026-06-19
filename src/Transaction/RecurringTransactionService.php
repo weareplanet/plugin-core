@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\Transaction;
 
 use WeArePlanet\PluginCore\Log\LoggerInterface;
-use WeArePlanet\PluginCore\Token\TokenService;
 
 /**
  * Service for handling recurring transactions.
@@ -15,7 +14,6 @@ readonly class RecurringTransactionService
     public function __construct(
         private TransactionService $transactionService,
         private RecurringTransactionGatewayInterface $recurringGateway,
-        private TokenService $tokenService,
         private LoggerInterface $logger,
     ) {
     }
@@ -34,14 +32,20 @@ readonly class RecurringTransactionService
 
         $originalTransaction = $this->transactionService->getTransaction($spaceId, $transactionId);
 
-        if (!$originalTransaction->token) {
-            $this->logger->debug("Transaction $transactionId has no token. Attempting to create one.");
-            $token = $this->tokenService->createTokenForTransaction($spaceId, $transactionId);
-            if ($token) {
-                $originalTransaction->token = $token;
-            } else {
-                $this->logger->error("Could not create token for Transaction $transactionId.");
-            }
+        // A token with stored payment credentials is required for recurring charges.
+        // The original transaction must have been created with tokenizationMode = FORCE_CREATION
+        // so the API automatically generates a token when the payment completes.
+        if ($originalTransaction->token === null) {
+            throw new \RuntimeException(
+                "Transaction $transactionId has no token. "
+                . "The original transaction must be created with tokenizationMode = FORCE_CREATION "
+                . "to enable recurring payments.",
+            );
+        }
+
+        // The billing address is required on the transaction context to calculate taxes and process billing correctly.
+        if ($originalTransaction->billingAddress === null) {
+            throw new \RuntimeException("Transaction $transactionId has no billing address.");
         }
 
         $context = TransactionContext::fromTransaction($originalTransaction);

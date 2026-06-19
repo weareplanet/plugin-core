@@ -16,6 +16,7 @@ use WeArePlanet\PluginCore\LineItem\LineItemConsistencyService;
 use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\RecurringTransactionGateway;
 use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TokenGateway;
 use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TransactionGateway;
+use WeArePlanet\PluginCore\Token\Exception\TokenException;
 use WeArePlanet\PluginCore\Token\TokenService;
 use WeArePlanet\PluginCore\Transaction\RecurringTransactionService;
 use WeArePlanet\PluginCore\Transaction\TransactionService;
@@ -47,7 +48,6 @@ $tokenService = new TokenService(new TokenGateway($sdkProvider, $logger), $logge
 $recurringService = new RecurringTransactionService(
     $transactionService,
     $recurringGateway,
-    $tokenService,
     $logger
 );
 
@@ -55,6 +55,17 @@ echo "Attempting to Process Recurring Payment for Transaction ID: $transactionId
 
 // Execute the recurring payment processing.
 try {
+    // Check if token exists. If not, manually create it using TokenService.
+    // createTokenForTransaction now throws a TokenException on failure (with a
+    // localized reason) instead of silently returning null.
+    $originalTransaction = $transactionService->getTransaction((int)$spaceId, $transactionId);
+    if ($originalTransaction->token === null) {
+        echo "No token found on transaction $transactionId. Attempting to create one manually via TokenService...\n";
+        $token = $tokenService->createTokenForTransaction((int)$spaceId, $transactionId);
+        $originalTransaction->token = $token;
+        echo "Successfully created token {$token->id}.\n";
+    }
+
     $newTransaction = $recurringService->processRecurringPayment((int)$spaceId, $transactionId);
 
     echo "---------------------------------------------------\n";
@@ -62,7 +73,18 @@ try {
     echo "---------------------------------------------------\n";
     echo "New Transaction ID: " . $newTransaction->id . "\n";
     echo "New State:          " . $newTransaction->state->value . "\n";
+    // The failure reason is now preserved on recurring charges that resolve to FAILED.
+    if ($newTransaction->failureReason !== null) {
+        echo "Failure Reason:     " . $newTransaction->failureReason->localize('en-US') . "\n";
+    }
     echo "---------------------------------------------------\n";
+} catch (TokenException $e) {
+    echo "---------------------------------------------------\n";
+    echo "TOKEN CREATION FAILED\n";
+    echo "---------------------------------------------------\n";
+    echo "Reason: " . ($e->getLocalizedReason()?->localize('en-US') ?? $e->getMessage()) . "\n";
+    echo "---------------------------------------------------\n";
+    exit(1);
 } catch (\Throwable $e) {
     echo "---------------------------------------------------\n";
     echo "RECURRING PAYMENT FAILED\n";

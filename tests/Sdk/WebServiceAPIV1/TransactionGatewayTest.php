@@ -15,6 +15,7 @@ use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TransactionGateway;
 use WeArePlanet\PluginCore\Settings\IntegrationMode;
 use WeArePlanet\PluginCore\Settings\Settings;
 use WeArePlanet\PluginCore\Transaction\TransactionContext;
+use WeArePlanet\Sdk\ApiException;
 use WeArePlanet\Sdk\Model\FailureReason as SdkFailureReason;
 use WeArePlanet\Sdk\Model\LineItemType as SdkLineItemType;
 use WeArePlanet\Sdk\Model\PaymentMethodConfiguration as SdkConfiguration;
@@ -263,5 +264,41 @@ class TransactionGatewayTest extends TestCase
 
         $this->assertEquals($now->getTimestamp(), $transaction->createdOn->getTimestamp());
         $this->assertEquals($now->getTimestamp(), $transaction->failedOn->getTimestamp());
+    }
+
+    public function testFindRethrowsApiExceptionOn500(): void
+    {
+        $spaceId = 123;
+        $transactionId = 456;
+
+        $this->sdkTransactionService->expects($this->once())
+            ->method('read')
+            ->with($spaceId, $transactionId)
+            ->willThrowException(new ApiException('Internal Server Error', 500));
+
+        $this->logger->expects($this->once())
+            ->method('error')
+            ->with($this->stringContains('Gateway: Failed to find transaction'));
+
+        $this->expectException(ApiException::class);
+        $this->gateway->find($spaceId, $transactionId);
+    }
+
+    public function testFindReturnsNullOn404ApiException(): void
+    {
+        $spaceId = 123;
+        $transactionId = 456;
+
+        $this->sdkTransactionService->expects($this->once())
+            ->method('read')
+            ->with($spaceId, $transactionId)
+            ->willThrowException(new ApiException('Not Found', 404));
+
+        $this->logger->expects($this->once())
+            ->method('debug')
+            ->with($this->stringContains('not found in Space'));
+
+        $result = $this->gateway->find($spaceId, $transactionId);
+        $this->assertNull($result);
     }
 }

@@ -8,6 +8,7 @@ use WeArePlanet\PluginCore\LineItem\LineItem;
 use WeArePlanet\PluginCore\LineItem\LineItemConsistencyService;
 use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TransactionGateway;
 use WeArePlanet\PluginCore\Tax\Tax;
+use WeArePlanet\PluginCore\Token\TokenizationMode as TokenizationModeEnum;
 use WeArePlanet\PluginCore\Transaction\TransactionContext;
 use WeArePlanet\PluginCore\Transaction\TransactionService;
 
@@ -49,7 +50,13 @@ $context->transactionId = null;
 $context->successUrl = 'https://example.com/success';
 $context->failedUrl = 'https://example.com/fail';
 
+// Enable tokenization so the API creates a token with payment credentials
+// when the transaction completes. This is required for recurring payments.
+// Silent token creation is disabled by default for legal/consent reasons and must be explicitly commanded.
+$context->tokenizationMode = TokenizationModeEnum::FORCE_CREATION;
+
 $billing = new Address();
+
 $billing->givenName = 'John';
 $billing->familyName = 'Doe';
 $billing->street = 'Bahnhofstrasse 1';

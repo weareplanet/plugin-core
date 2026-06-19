@@ -38,8 +38,13 @@ $service = new TransactionCompletionService($gateway, $logger);
 // Execute the void operation for the transaction.
 try {
     echo "Voiding Transaction $transactionId..." . PHP_EOL;
-    $state = $service->void((int)$spaceId, $transactionId);
-    echo "Result: Void state is $state" . PHP_EOL;
+    $void = $service->void((int)$spaceId, $transactionId);
+    echo "Result: Void state is {$void->state->value}" . PHP_EOL;
+    // If the gateway reported a failure reason, localize it for the shop locale.
+    if ($void->failureReason !== null) {
+        $shopLocale = 'en-US';
+        echo "Failure Reason: " . $void->failureReason->localize($shopLocale) . PHP_EOL;
+    }
 } catch (\Throwable $e) {
     echo "Error: " . $e->getMessage() . PHP_EOL;
 }

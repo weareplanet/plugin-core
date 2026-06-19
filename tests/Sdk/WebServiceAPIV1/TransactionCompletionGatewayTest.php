@@ -10,6 +10,9 @@ use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TransactionCompletionGateway;
 use WeArePlanet\PluginCore\Transaction\Completion\State;
 use WeArePlanet\PluginCore\Transaction\Completion\TransactionCompletion;
+use WeArePlanet\PluginCore\Transaction\Void\State as VoidState;
+use WeArePlanet\PluginCore\Transaction\Void\TransactionVoid;
+use WeArePlanet\Sdk\Model\FailureReason as SdkFailureReason;
 use WeArePlanet\Sdk\Model\TransactionCompletion as SdkTransactionCompletion;
 use WeArePlanet\Sdk\Model\TransactionCompletionState;
 use WeArePlanet\Sdk\Model\TransactionVoid as SdkTransactionVoid;
@@ -39,6 +42,31 @@ class TransactionCompletionGatewayTest extends TestCase
         $this->gateway = new TransactionCompletionGateway($this->sdkProvider);
     }
 
+    public function testCaptureMapsFailureReason(): void
+    {
+        $spaceId = 1;
+        $transactionId = 2;
+
+        $failureReason = new SdkFailureReason();
+        $failureReason->setDescription(['en-US' => 'Insufficient funds']);
+
+        $sdkCompletion = new SdkTransactionCompletion();
+        $sdkCompletion->setId(10);
+        $sdkCompletion->setLinkedTransaction($transactionId);
+        $sdkCompletion->setState(TransactionCompletionState::FAILED);
+        $sdkCompletion->setFailureReason($failureReason);
+
+        $this->completionService->expects($this->once())
+            ->method('completeOnline')
+            ->with($spaceId, $transactionId)
+            ->willReturn($sdkCompletion);
+
+        $result = $this->gateway->capture($spaceId, $transactionId);
+
+        $this->assertNotNull($result->failureReason);
+        $this->assertEquals('Insufficient funds', $result->failureReason->localize('en-US'));
+    }
+
     public function testCaptureReturnsCompletion(): void
     {
         $spaceId = 1;
@@ -60,9 +88,35 @@ class TransactionCompletionGatewayTest extends TestCase
         $this->assertEquals(10, $result->id);
         $this->assertEquals($transactionId, $result->linkedTransactionId);
         $this->assertEquals(State::SUCCESSFUL, $result->state);
+        $this->assertNull($result->failureReason);
     }
 
-    public function testVoidReturnsStateString(): void
+    public function testVoidMapsFailureReason(): void
+    {
+        $spaceId = 1;
+        $transactionId = 2;
+
+        $failureReason = new SdkFailureReason();
+        $failureReason->setDescription(['en-US' => 'Void rejected by gateway']);
+
+        $sdkVoid = new SdkTransactionVoid();
+        $sdkVoid->setState(TransactionVoidState::FAILED);
+        $sdkVoid->setFailureReason($failureReason);
+
+        $this->voidService->expects($this->once())
+            ->method('voidOnline')
+            ->with($spaceId, $transactionId)
+            ->willReturn($sdkVoid);
+
+        $result = $this->gateway->void($spaceId, $transactionId);
+
+        $this->assertInstanceOf(TransactionVoid::class, $result);
+        $this->assertEquals(VoidState::FAILED, $result->state);
+        $this->assertNotNull($result->failureReason);
+        $this->assertEquals('Void rejected by gateway', $result->failureReason->localize('en-US'));
+    }
+
+    public function testVoidReturnsTransactionVoid(): void
     {
         $spaceId = 1;
         $transactionId = 2;
@@ -77,6 +131,8 @@ class TransactionCompletionGatewayTest extends TestCase
 
         $result = $this->gateway->void($spaceId, $transactionId);
 
-        $this->assertEquals('SUCCESSFUL', $result);
+        $this->assertInstanceOf(TransactionVoid::class, $result);
+        $this->assertEquals(VoidState::SUCCESSFUL, $result->state);
+        $this->assertNull($result->failureReason);
     }
 }

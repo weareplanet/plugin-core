@@ -66,10 +66,15 @@ Typically triggered when you decide not to proceed with the transaction.
 
 ```php
 try {
-    // Perform the void
-    $state = $completionService->void($spaceId, $transactionId);
+    // Perform the void; returns a TransactionVoid domain object
+    $void = $completionService->void($spaceId, $transactionId);
 
-    echo "Void successful! State: " . $state;
+    echo "Void successful! State: " . $void->state->value;
+
+    // If the gateway reported a failure reason, localize it for the shop locale
+    if ($void->failureReason !== null) {
+        echo "Failure reason: " . $void->failureReason->localize('en-US');
+    }
 } catch (TransactionException $e) {
     $logger->error("Void failed: " . $e->getMessage());
 }

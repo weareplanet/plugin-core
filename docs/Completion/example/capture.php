@@ -46,6 +46,11 @@ try {
     echo "---------------------------------------------------\n";
     echo "Completion ID: " . $completion->id . "\n";
     echo "New State:     " . $completion->state->value . "\n";
+    // If the gateway reported a failure reason, localize it for the shop locale.
+    if ($completion->failureReason !== null) {
+        $shopLocale = 'en-US';
+        echo "Failure Reason: " . $completion->failureReason->localize($shopLocale) . "\n";
+    }
     echo "---------------------------------------------------\n";
 } catch (\Exception $e) {
     echo "---------------------------------------------------\n";

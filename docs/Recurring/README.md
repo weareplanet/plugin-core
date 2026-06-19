@@ -12,8 +12,8 @@ The recurring payment process triggers a charge attempt on a previously successf
 **2. The Recurring Gateway**
 The logic is encapsulated in the `RecurringTransactionGatewayInterface`. This interface exposes a specific method for processing recurring charges: `processRecurringPayment`.
 
-**3. Automatic Token Creation**
-If the original transaction does not have a saved token, the service attempts to create one automatically before processing the recurring payment. This ensures that subsequent charges can still be performed even if the initial payment wasn't tokenized explicitly.
+**3. Token and Billing Address Requirements**
+For a recurring payment to succeed, a valid payment token and billing address must be present on the original transaction. If either is missing, the service immediately throws a `\RuntimeException` (Fail Fast approach).
 
 ### Integration Guide
 
@@ -24,36 +24,51 @@ If the original transaction does not have a saved token, the service attempts to
  ```php
  use WeArePlanet\PluginCore\Transaction\RecurringTransactionService;
  use WeArePlanet\PluginCore\Transaction\TransactionService;
- use WeArePlanet\PluginCore\Token\TokenService;
  use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\RecurringTransactionGateway;
- use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TokenGateway;
  
- // 1. Setup Gateways
+ // Setup Gateway
  $recurringGateway = new RecurringTransactionGateway($sdkProvider, $logger);
- $tokenGateway = new TokenGateway($sdkProvider, $logger);
  
- // 2. Setup Services
- $tokenService = new TokenService($tokenGateway, $logger);
-
- // 3. Instantiate Recurring Service
+ // Instantiate Recurring Service
  $recurringService = new RecurringTransactionService(
      $transactionService,
      $recurringGateway,
-     $tokenService,
      $logger
  );
  ```
 
 #### Step 2: Execute Recurring Payment
 
- The recurring payment is triggered using the original transaction ID and the space ID.
+ The recurring payment is triggered using the original transaction ID and the space ID. If a token was not created during checkout, you must manually create it using the `TokenService` first.
 
  ```php
+ use WeArePlanet\PluginCore\Token\TokenService;
+ use WeArePlanet\PluginCore\Token\Exception\TokenException;
+ use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TokenGateway;
+
+ $tokenGateway = new TokenGateway($sdkProvider, $logger);
+ $tokenService = new TokenService($tokenGateway, $logger);
+
  try {
+     // If the original transaction has no token, create one. On failure this now
+     // throws a TokenException carrying the gateway's localized rejection reason
+     // (it no longer fails silently by returning null).
+     $transaction = $transactionService->getTransaction($spaceId, $originalTransactionId);
+     if ($transaction->token === null) {
+         $transaction->token = $tokenService->createTokenForTransaction($spaceId, $originalTransactionId);
+     }
+
      // Perform the recurring charge
      $newTransaction = $recurringService->processRecurringPayment($spaceId, $originalTransactionId);
- 
+
      echo "Recurring payment processed! New Transaction ID: " . $newTransaction->id;
+
+     // A recurring charge may resolve to FAILED; the localized failure reason is now preserved.
+     if ($newTransaction->failureReason !== null) {
+         echo "Failure reason: " . $newTransaction->failureReason->localize('en-US');
+     }
+ } catch (TokenException $e) {
+     $logger->error("Token creation failed: " . ($e->getLocalizedReason()?->localize('en-US') ?? $e->getMessage()));
  } catch (\Throwable $e) {
      $logger->error("Recurring payment failed: " . $e->getMessage());
  }
@@ -70,11 +85,6 @@ sequenceDiagram
     Scheduler->>PluginCore: processRecurringPayment(spaceId, originalTransactionId)
     PluginCore->>WeArePlanetAPI: readTransaction(originalId)
     WeArePlanetAPI-->>PluginCore: Original Transaction
-    
-    opt If Token Missing
-        PluginCore->>WeArePlanetAPI: createToken(spaceId, originalId)
-        WeArePlanetAPI-->>PluginCore: New Token
-    end
 
     PluginCore->>WeArePlanetAPI: createTransaction(context)
     WeArePlanetAPI-->>PluginCore: New Transaction

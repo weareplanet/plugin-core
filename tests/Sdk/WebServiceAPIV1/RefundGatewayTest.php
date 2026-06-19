@@ -7,12 +7,14 @@ namespace WeArePlanet\PluginCore\Tests\Sdk\WebServiceAPIV1;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
+use WeArePlanet\PluginCore\Refund\Exception\RefundException;
 use WeArePlanet\PluginCore\Refund\Refund;
 use WeArePlanet\PluginCore\Refund\RefundContext;
 use WeArePlanet\PluginCore\Refund\Type as RefundType;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\RefundGateway;
 use WeArePlanet\PluginCore\Transaction\Transaction;
+use WeArePlanet\Sdk\Model\FailureReason as SdkFailureReason;
 use WeArePlanet\Sdk\Model\Refund as SdkRefund;
 use WeArePlanet\Sdk\Model\RefundCreate as SdkRefundCreate;
 use WeArePlanet\Sdk\Model\RefundState;
@@ -35,7 +37,10 @@ class RefundGatewayTest extends TestCase
             ->with(SdkRefundService::class)
             ->willReturn($this->refundService);
 
-        $this->gateway = new RefundGateway($this->sdkProvider, $this->logger);
+        $this->gateway = new RefundGateway(
+            $this->sdkProvider,
+            $this->logger,
+        );
     }
 
     public function testFindByTransactionReturnsArrayOfRefunds(): void
@@ -61,6 +66,24 @@ class RefundGatewayTest extends TestCase
         $this->assertEquals(50.0, $result->amount);
         $this->assertEquals('SUCCESSFUL', $result->state->value);
     }
+
+    public function testFindByTransactionThrowsRefundExceptionOnError(): void
+    {
+        $spaceId = 1;
+        $transactionId = 2;
+
+        $this->refundService->expects($this->once())
+            ->method('search')
+            ->willThrowException(new \Exception('Search failed'));
+
+        $this->logger->expects($this->once())
+            ->method('error')
+            ->with($this->stringContains('Failed to find refunds'));
+
+        $this->expectException(RefundException::class);
+        $this->gateway->findByTransaction($spaceId, $transactionId);
+    }
+
 
     public function testRefundDelegatesToServiceAndMapsResult(): void
     {
@@ -96,5 +119,78 @@ class RefundGatewayTest extends TestCase
         $this->assertInstanceOf(Refund::class, $result);
         $this->assertEquals(20, $result->id);
         $this->assertEquals(10.0, $result->amount);
+    }
+
+    public function testRefundFailedOnIsMapped(): void
+    {
+        $spaceId = 1;
+        $transactionId = 2;
+
+        $context = new RefundContext(
+            $transactionId,
+            10.0,
+            'ref-dates',
+            RefundType::MERCHANT_INITIATED_ONLINE,
+            [],
+        );
+
+        $createdOn = new \DateTime('2026-01-15T10:00:00+00:00');
+        $failedOn = new \DateTime('2026-01-15T10:30:00+00:00');
+
+        $sdkRefund = new SdkRefund();
+        $sdkRefund->setId(41);
+        $sdkRefund->setAmount(10.0);
+        $sdkRefund->setExternalId('ext-dates');
+        $sdkRefund->setState(RefundState::FAILED);
+        $sdkRefund->setCreatedOn($createdOn);
+        $sdkRefund->setFailedOn($failedOn);
+
+        $this->refundService->expects($this->once())
+            ->method('refund')
+            ->willReturn($sdkRefund);
+
+        $result = $this->gateway->refund($spaceId, $context);
+
+        $this->assertInstanceOf(\DateTimeImmutable::class, $result->failedOn);
+        $this->assertSame($failedOn->getTimestamp(), $result->failedOn->getTimestamp());
+        $this->assertInstanceOf(\DateTimeImmutable::class, $result->createdOn);
+        $this->assertSame($createdOn->getTimestamp(), $result->createdOn->getTimestamp());
+    }
+
+    public function testRefundMapsFailureReason(): void
+    {
+        $spaceId = 1;
+        $transactionId = 2;
+
+        $context = new RefundContext(
+            $transactionId,
+            10.0,
+            'ref-fail',
+            RefundType::MERCHANT_INITIATED_ONLINE,
+            [],
+        );
+
+        $failureReason = new SdkFailureReason();
+        $failureReason->setDescription([
+            'en-US' => 'Insufficient funds',
+            'de-DE' => 'Unzureichende Deckung',
+        ]);
+
+        $sdkRefund = new SdkRefund();
+        $sdkRefund->setId(40);
+        $sdkRefund->setAmount(10.0);
+        $sdkRefund->setExternalId('ext-fail');
+        $sdkRefund->setState(RefundState::FAILED);
+        $sdkRefund->setFailureReason($failureReason);
+
+        $this->refundService->expects($this->once())
+            ->method('refund')
+            ->willReturn($sdkRefund);
+
+        $result = $this->gateway->refund($spaceId, $context);
+
+        $this->assertNotNull($result->failureReason);
+        $this->assertSame('Insufficient funds', $result->failureReason->localize('en-US'));
+        $this->assertSame('Unzureichende Deckung', $result->failureReason->localize('de-DE'));
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\Transaction\Completion;
 
 use WeArePlanet\PluginCore\LineItem\LineItem;
+use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Render\JsonStringableTrait;
 
 /**
@@ -15,6 +16,11 @@ use WeArePlanet\PluginCore\Render\JsonStringableTrait;
 class TransactionCompletion
 {
     use JsonStringableTrait;
+
+    /**
+     * @var LocalizedString|null The localized failure reason from the API.
+     */
+    public ?LocalizedString $failureReason = null;
 
     /**
      * @var int The completion ID.

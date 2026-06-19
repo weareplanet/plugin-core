@@ -133,7 +133,13 @@ class TransactionServiceTest extends TestCase
         // 2. Mock consistency check: 0.00 total
         $this->consistencyService->expects($this->once())
             ->method('ensureConsistency')
-            ->with($this->anything(), 0.00, 'CHF')
+            ->with(
+                $this->anything(),
+                0.00,
+                'CHF',
+                1,
+                null,
+            )
             ->willReturnArgument(0);
 
         $transaction = new Transaction();

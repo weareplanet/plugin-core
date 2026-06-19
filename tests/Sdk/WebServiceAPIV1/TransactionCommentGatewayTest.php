@@ -9,6 +9,7 @@ use PHPUnit\Framework\TestCase;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TransactionCommentGateway;
+use WeArePlanet\PluginCore\Transaction\Exception\TransactionCommentException;
 use WeArePlanet\Sdk\Model\TransactionComment as SdkTransactionComment;
 use WeArePlanet\Sdk\Service\TransactionCommentService as SdkTransactionCommentService;
 
@@ -36,18 +37,6 @@ class TransactionCommentGatewayTest extends TestCase
         );
     }
 
-    public function testGetCommentsHandlesExceptionGracefully(): void
-    {
-        $this->sdkReferenceService->method('all')
-            ->willThrowException(new \Exception("API Error"));
-
-        $this->logger->expects($this->once())->method('error');
-
-        $comments = $this->gateway->getComments(1, 1);
-        $this->assertIsArray($comments);
-        $this->assertEmpty($comments);
-    }
-
     public function testGetCommentsMapsCorrectly(): void
     {
         $spaceId = 123;
@@ -70,5 +59,16 @@ class TransactionCommentGatewayTest extends TestCase
         $this->assertEquals(999, $comments[0]->id);
         $this->assertEquals('Test Comment', $comments[0]->content);
         $this->assertEquals($now->getTimestamp(), $comments[0]->createdOn->getTimestamp());
+    }
+
+    public function testGetCommentsThrowsExceptionOnError(): void
+    {
+        $this->sdkReferenceService->method('all')
+            ->willThrowException(new \Exception("API Error"));
+
+        $this->logger->expects($this->once())->method('error');
+
+        $this->expectException(TransactionCommentException::class);
+        $this->gateway->getComments(1, 1);
     }
 }
