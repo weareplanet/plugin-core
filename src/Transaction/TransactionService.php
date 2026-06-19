@@ -67,6 +67,8 @@ class TransactionService
                 $context->lineItems,
                 $context->expectedGrandTotal,
                 $context->currencyCode,
+                $context->spaceId,
+                $context->transactionId,
             );
 
             $this->validateContext($context);

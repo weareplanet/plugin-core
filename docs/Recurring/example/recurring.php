@@ -81,6 +81,10 @@ try {
     echo "---------------------------------------------------\n";
     echo "New Transaction ID: " . $newTransaction->id . "\n";
     echo "New State:          " . $newTransaction->state->value . "\n";
+    // The failure reason is now preserved on recurring charges that resolve to FAILED.
+    if ($newTransaction->failureReason !== null) {
+        echo "Failure Reason:     " . $newTransaction->failureReason->localize('en-US') . "\n";
+    }
     echo "---------------------------------------------------\n";
 } catch (\Throwable $e) {
     echo "---------------------------------------------------\n";

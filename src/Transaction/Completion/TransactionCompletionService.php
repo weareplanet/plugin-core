@@ -6,6 +6,7 @@ namespace WeArePlanet\PluginCore\Transaction\Completion;
 
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
+use WeArePlanet\PluginCore\Transaction\Void\TransactionVoid;
 
 /**
  * Service for handling transaction completions (Capture, Void).
@@ -47,19 +48,24 @@ readonly class TransactionCompletionService
      *
      * @param int $spaceId The space ID.
      * @param int $transactionId The transaction ID to void.
-     * @return string The state of the void operation.
+     * @return TransactionVoid The resulting void domain object.
      * @throws TransactionException If the void fails.
      */
-    public function void(int $spaceId, int $transactionId): string
-    {
+    public function void(
+        int $spaceId,
+        int $transactionId,
+    ): TransactionVoid {
         try {
             $this->logger->debug("Voiding transaction $transactionId in Space $spaceId.");
 
-            $state = $this->completionGateway->void($spaceId, $transactionId);
+            $void = $this->completionGateway->void(
+                $spaceId,
+                $transactionId,
+            );
 
-            $this->logger->debug("Transaction $transactionId voided successfully. State: $state");
+            $this->logger->debug("Transaction $transactionId voided successfully. State: {$void->state->value}");
 
-            return $state;
+            return $void;
         } catch (\Throwable $e) {
             $this->logger->error("Void failed for Transaction $transactionId: " . $e->getMessage());
             throw new TransactionException("Unable to void transaction: " . $e->getMessage(), 0, $e);

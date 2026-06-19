@@ -6,11 +6,9 @@ namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV2;
 
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
+use WeArePlanet\PluginCore\Sdk\TransactionMapperTrait;
 use WeArePlanet\PluginCore\Transaction\RecurringTransactionGatewayInterface;
-use WeArePlanet\PluginCore\Transaction\State as StateEnum;
 use WeArePlanet\PluginCore\Transaction\Transaction;
-use WeArePlanet\Sdk\Model\Charge as SdkCharge;
-use WeArePlanet\Sdk\Model\Transaction as SdkTransaction;
 use WeArePlanet\Sdk\Service\TransactionsService as SdkTransactionsService;
 
 /**
@@ -21,6 +19,8 @@ use WeArePlanet\Sdk\Service\TransactionsService as SdkTransactionsService;
  */
 class RecurringTransactionGateway implements RecurringTransactionGatewayInterface
 {
+    use TransactionMapperTrait;
+
     /**
      * @var SdkTransactionsService The SDK transaction service.
      */
@@ -78,35 +78,5 @@ class RecurringTransactionGateway implements RecurringTransactionGatewayInterfac
             $this->logger->error("Failed to process recurring payment for Transaction $transactionId: " . $e->getMessage());
             throw $e;
         }
-    }
-
-    /**
-     * Maps an SDK Transaction to a domain Transaction.
-     *
-     * @param SdkTransaction $sdkTransaction The SDK transaction.
-     * @return Transaction The domain transaction.
-     */
-    private function mapToTransaction(SdkTransaction $sdkTransaction): Transaction
-    {
-        $domain = new Transaction();
-        $domain->id = $sdkTransaction->getId();
-        $domain->spaceId = $sdkTransaction->getLinkedSpaceId();
-        $domain->version = $sdkTransaction->getVersion();
-
-        // Map State (String -> Enum)
-        $domain->state = match ((string) $sdkTransaction->getState()) {
-            'PENDING' => StateEnum::PENDING,
-            'CONFIRMED' => StateEnum::CONFIRMED,
-            'PROCESSING' => StateEnum::PROCESSING,
-            'FAILED' => StateEnum::FAILED,
-            'AUTHORIZED' => StateEnum::AUTHORIZED,
-            'VOIDED' => StateEnum::VOIDED,
-            'COMPLETED' => StateEnum::COMPLETED,
-            'FULFILL' => StateEnum::FULFILL,
-            'DECLINE' => StateEnum::DECLINE,
-            default => StateEnum::PENDING,
-        };
-
-        return $domain;
     }
 }

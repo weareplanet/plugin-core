@@ -8,7 +8,7 @@ The Refund process involves:
 
 1. **Validation**: Ensures the refund amount does not exceed the remaining authorized amount. Line item quantities and amounts are also validated.
 2. **Creation**: A refund is created via the WeArePlanet SDK.
-3. **Result**: A strict Domain Entity `Refund` is returned, containing state and ID.
+3. **Result**: A strict Domain Entity `Refund` is returned, containing the state and ID and — when the gateway reports a failure — a localized `failureReason` plus `createdOn` / `failedOn` timestamps.
 
 ## Key Components
 
@@ -61,6 +61,8 @@ $context = new RefundContext(
 use WeArePlanet\PluginCore\Refund\RefundService;
 use WeArePlanet\PluginCore\Refund\RefundContext;
 use WeArePlanet\PluginCore\Refund\Type as TypeEnum;
+use WeArePlanet\PluginCore\Refund\Exception\InvalidRefundException;
+use WeArePlanet\PluginCore\Refund\Exception\RefundException;
 
 // ... instantiate services ...
 
@@ -74,9 +76,18 @@ $context = new RefundContext(
 
 try {
     $refund = $refundService->createRefund($spaceId, $context);
-    echo "Refund created: " . $refund->id;
+    echo "Refund created: " . $refund->id . " (" . $refund->state->value . ")";
+
+    // The gateway may return a FAILED refund carrying a localized failure reason.
+    if ($refund->failureReason !== null) {
+        echo "Failure reason: " . $refund->failureReason->localize('en-US');
+    }
 } catch (InvalidRefundException $e) {
+    // Thrown before the API call when the request violates a business rule.
     echo "Validation failed: " . $e->getMessage();
+} catch (RefundException $e) {
+    // Thrown when the gateway/API rejects the refund; carries a localized reason.
+    echo "Refund failed: " . ($e->getLocalizedReason()?->localize('en-US') ?? $e->getMessage());
 }
 ```
 
@@ -90,6 +101,12 @@ $refunds = $refundService->getRefunds($spaceId, $transactionId);
 foreach ($refunds as $refund) {
     echo "Refund ID: " . $refund->id;
     echo "State: " . $refund->state->value;
+
+    // A FAILED refund exposes its localized reason and the time it failed.
+    if ($refund->failureReason !== null) {
+        echo "Failure reason: " . $refund->failureReason->localize('en-US');
+        echo "Failed on: " . $refund->failedOn?->format(\DATE_ATOM);
+    }
 }
 ```
 

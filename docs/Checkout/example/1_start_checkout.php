@@ -17,7 +17,7 @@ use WeArePlanet\PluginCore\Transaction\TransactionContext;
 use WeArePlanet\PluginCore\Transaction\TransactionService;
 use WeArePlanet\PluginCore\Examples\Common\FilePersistence;
 
-// 1. Initialize Services via Bootstrap
+// Initialize Services via Bootstrap
 $common = require __DIR__ . '/../../examples/Common/bootstrap.php';
 
 $spaceId = $common['spaceId'];
@@ -27,7 +27,6 @@ $logger = $common['logger'];
 $settings = $common['settings'];
 $sdkProvider = $common['sdkProvider'];
 
-// 2. Additional Services
 // FilePersistence is now in Common, but we might want to use a local session file
 // The unified FilePersistence defaults to getcwd() . '/session.json' which should work 
 // if run from the example directory.
@@ -35,19 +34,18 @@ $persistence = new FilePersistence(__DIR__ . '/session.json');
 
 $gateway = new TransactionGateway($sdkProvider, $logger, $settings);
 
-// ✅ FIX: Inject Settings and Logger into Consistency Service
 $consistency = new LineItemConsistencyService($settings, $logger);
 
 $service = new TransactionService($gateway, $consistency, $logger);
 
-// 3. Initialize Session (Clean Slate)
+// Initialize Session (Clean Slate)
 $sessionFile = __DIR__ . '/session.json';
 if (file_exists($sessionFile)) {
     unlink($sessionFile);
     echo "Refreshed Session (Deleted old session.json)\n";
 }
 
-// 4. Build Initial Cart
+// Build Initial Cart
 echo "Building Cart (1x Swiss Watch)...\n";
 
 $context = new TransactionContext();
@@ -62,6 +60,7 @@ $context->failedUrl = 'https://example.com/fail';
 
 // Enable tokenization so the API creates a token with payment credentials
 // when the transaction completes. This is required for recurring payments (MIT).
+// Silent token creation is disabled by default for legal/consent reasons and must be explicitly commanded.
 $context->tokenizationMode = TokenizationModeEnum::FORCE_CREATION;
 
 $billing = new Address();

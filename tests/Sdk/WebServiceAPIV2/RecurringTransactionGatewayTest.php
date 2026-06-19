@@ -13,6 +13,7 @@ use WeArePlanet\PluginCore\Transaction\State as StateEnum;
 use WeArePlanet\PluginCore\Transaction\Transaction;
 use WeArePlanet\Sdk\Model\Charge as SdkCharge;
 use WeArePlanet\Sdk\Model\ChargeState as SdkChargeState;
+use WeArePlanet\Sdk\Model\FailureReason as SdkFailureReason;
 use WeArePlanet\Sdk\Model\Transaction as SdkTransaction;
 use WeArePlanet\Sdk\Model\TransactionState as SdkTransactionState;
 use WeArePlanet\Sdk\Service\TransactionsService as SdkTransactionsService;
@@ -84,5 +85,48 @@ class RecurringTransactionGatewayTest extends TestCase
             ->willThrowException(new \Exception("API Error"));
 
         $this->gateway->processRecurringPayment(1, 200);
+    }
+
+    public function testProcessRecurringPaymentRetainsLocalizedFailureReason(): void
+    {
+        $spaceId = 1;
+        $transactionId = 200;
+
+        // The charge itself completes; the fetched transaction reports the failure.
+        $sdkCharge = new SdkCharge();
+        $sdkCharge->setState(SdkChargeState::SUCCESSFUL);
+
+        $failureReason = new SdkFailureReason();
+        $failureReason->setDescription([
+            'en-US' => 'Card expired',
+            'de-DE' => 'Karte abgelaufen',
+        ]);
+
+        $sdkTransaction = new SdkTransaction();
+        $sdkTransaction->setId($transactionId);
+        $sdkTransaction->setLinkedSpaceId($spaceId);
+        $sdkTransaction->setVersion(1);
+        $sdkTransaction->setState(SdkTransactionState::FAILED);
+        $sdkTransaction->setFailureReason($failureReason);
+        $sdkTransaction->setUserFailureMessage('Your card has expired.');
+
+        $this->transactionService->expects($this->once())
+            ->method('postPaymentTransactionsIdProcessWithToken')
+            ->with($transactionId, $spaceId)
+            ->willReturn($sdkCharge);
+
+        $this->transactionService->expects($this->once())
+            ->method('getPaymentTransactionsId')
+            ->with($transactionId, $spaceId)
+            ->willReturn($sdkTransaction);
+
+        $result = $this->gateway->processRecurringPayment($spaceId, $transactionId);
+
+        $this->assertEquals(StateEnum::FAILED, $result->state);
+        $this->assertNotNull($result->failureReason);
+        $this->assertSame('Card expired', $result->failureReason->localize('en-US'));
+        $this->assertSame('Karte abgelaufen', $result->failureReason->localize('de-DE'));
+        $this->assertNotNull($result->userFailureMessage);
+        $this->assertSame('Your card has expired.', $result->userFailureMessage->localize('en-US'));
     }
 }

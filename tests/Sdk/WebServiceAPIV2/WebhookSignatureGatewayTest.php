@@ -9,14 +9,15 @@ use PHPUnit\Framework\TestCase;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\WebhookSignatureGateway;
+use WeArePlanet\PluginCore\Webhook\Exception\WebhookSignatureValidationException;
 use WeArePlanet\Sdk\Service\WebhookEncryptionKeysService as SdkWebhookEncryptionKeysService;
 
 class WebhookSignatureGatewayTest extends TestCase
 {
-    private WebhookSignatureGateway $gateway;
-    private MockObject|SdkProvider $sdkProvider;
-    private MockObject|LoggerInterface $logger;
     private MockObject|SdkWebhookEncryptionKeysService $encryptionService;
+    private WebhookSignatureGateway $gateway;
+    private MockObject|LoggerInterface $logger;
+    private MockObject|SdkProvider $sdkProvider;
 
     protected function setUp(): void
     {
@@ -28,10 +29,26 @@ class WebhookSignatureGatewayTest extends TestCase
             ->with(SdkWebhookEncryptionKeysService::class)
             ->willReturn($this->encryptionService);
 
-        $this->gateway = new WebhookSignatureGateway($this->sdkProvider, $this->logger);
+        $this->gateway = new WebhookSignatureGateway(
+            $this->sdkProvider,
+            $this->logger,
+        );
     }
 
-    public function testValidateReturnsTrueForValidSignature(): void
+    public function testValidateReturnsFalseWhenSignatureIsInvalid(): void
+    {
+        $header = 'invalid-sig';
+        $payload = 'data';
+
+        $this->encryptionService->expects($this->once())
+            ->method('isContentValid')
+            ->with($header, $payload)
+            ->willReturn(false);
+
+        $this->assertFalse($this->gateway->validate($header, $payload));
+    }
+
+    public function testValidateReturnsTrueWhenSignatureIsValid(): void
     {
         $header = 'valid-sig';
         $payload = 'data';
@@ -44,7 +61,7 @@ class WebhookSignatureGatewayTest extends TestCase
         $this->assertTrue($this->gateway->validate($header, $payload));
     }
 
-    public function testValidateReturnsFalseForInvalidSignature(): void
+    public function testValidateThrowsExceptionWhenCryptographicErrorOccurs(): void
     {
         $header = 'invalid-sig';
         $payload = 'data';
@@ -52,8 +69,13 @@ class WebhookSignatureGatewayTest extends TestCase
         $this->encryptionService->expects($this->once())
             ->method('isContentValid')
             ->with($header, $payload)
-            ->willThrowException(new \Exception("Invalid signature"));
+            ->willThrowException(new \Exception('Decryption error'));
 
-        $this->assertFalse($this->gateway->validate($header, $payload));
+        $this->logger->expects($this->once())
+            ->method('error')
+            ->with($this->stringContains('Webhook signature validation failed'));
+
+        $this->expectException(WebhookSignatureValidationException::class);
+        $this->gateway->validate($header, $payload);
     }
 }

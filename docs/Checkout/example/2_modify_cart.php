@@ -87,8 +87,8 @@ function fetch_and_print_methods(TransactionService $service, int $spaceId, int 
         $methods = $service->getAvailablePaymentMethods($spaceId, $txId, PaymentMethodSortingEnum::NAME);
         echo "   [Available Payment Methods]:\n";
         foreach ($methods as $method) {
-            // Check if title/description is an array (localized) or string
-            $title = is_array($method->title) ? ($method->title['en-US'] ?? reset($method->title)) : $method->title;
+            // Resolve localized title string using the LocalizedString object API
+            $title = $method->title->localize('en-US') ?? $method->title->getDefault();
             echo "   - ID: {$method->id} | {$title}\n";
         }
     } catch (\Exception $e) {

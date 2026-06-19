@@ -4,21 +4,27 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV2;
 
+use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
+use WeArePlanet\PluginCore\Refund\Exception\RefundException;
 use WeArePlanet\PluginCore\Refund\Refund;
 use WeArePlanet\PluginCore\Refund\RefundContext;
 use WeArePlanet\PluginCore\Refund\RefundGatewayInterface;
 use WeArePlanet\PluginCore\Refund\State as StateEnum;
-use WeArePlanet\PluginCore\Refund\Exception\InvalidRefundException;
+use WeArePlanet\PluginCore\Sdk\DateTimeMapperTrait;
+use WeArePlanet\PluginCore\Sdk\FailureReasonMapperTrait;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\Sdk\Model\LineItemReductionCreate as SdkLineItemReductionCreate;
+use WeArePlanet\Sdk\Model\Refund as SdkRefund;
 use WeArePlanet\Sdk\Model\RefundCreate as SdkRefundCreate;
 use WeArePlanet\Sdk\Model\RefundType as SdkRefundType;
 use WeArePlanet\Sdk\Service\RefundsService as SdkRefundService;
-use WeArePlanet\Sdk\Model\Refund as SdkRefund;
 
 class RefundGateway implements RefundGatewayInterface
 {
+    use DateTimeMapperTrait;
+    use FailureReasonMapperTrait;
+
     private SdkRefundService $sdkRefundService;
 
     public function __construct(
@@ -47,8 +53,21 @@ class RefundGateway implements RefundGatewayInterface
             }
             return $refunds;
         } catch (\Throwable $e) {
-            $this->logger->error("Failed to find refunds for Transaction $transactionId: {$e->getMessage()}");
-            return [];
+            $this->logger->error(
+                'Failed to find refunds for transaction: {errorMessage}',
+                [
+                    'errorMessage' => $e->getMessage(),
+                    'exception' => $e,
+                    'spaceId' => $spaceId,
+                    'transactionId' => $transactionId,
+                ],
+            );
+            throw new RefundException(
+                "Failed to find refunds for transaction {$transactionId}: " . $e->getMessage(),
+                new LocalizedString($e->getMessage()),
+                0,
+                $e,
+            );
         }
     }
 
@@ -105,7 +124,12 @@ class RefundGateway implements RefundGatewayInterface
             $this->logger->error("Refund failed for Transaction {$context->transactionId}: {$e->getMessage()}", [
                 'trace' => $e->getTraceAsString(),
             ]);
-            throw new InvalidRefundException("Unable to process refund: {$e->getMessage()}", 0, $e);
+            throw new RefundException(
+                "Unable to process refund: {$e->getMessage()}",
+                new LocalizedString($e->getMessage()),
+                0,
+                $e,
+            );
         }
     }
 
@@ -127,6 +151,15 @@ class RefundGateway implements RefundGatewayInterface
             default => StateEnum::PENDING, // Safe fallback
         };
 
+        $reason = $sdkRefund->getFailureReason();
+        if ($reason !== null) {
+            $refund->failureReason = $this->mapSdkFailureReason($reason);
+        }
+
+        $refund->createdOn = $this->toDateTimeImmutable($sdkRefund->getCreatedOn());
+        $refund->failedOn = $this->toDateTimeImmutable($sdkRefund->getFailedOn());
+
         return $refund;
     }
+
 }

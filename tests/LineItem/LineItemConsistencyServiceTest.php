@@ -18,6 +18,7 @@ class LineItemConsistencyServiceTest extends TestCase
     private function createService(
         bool $enabled = true,
         RoundingStrategy $strategy = RoundingStrategy::BY_LINE_ITEM,
+        ?LoggerInterface $logger = null,
     ): LineItemConsistencyService {
         $provider = $this->createMock(SettingsProviderInterface::class);
         $provider->method('getLineItemConsistencyEnabled')->willReturn($enabled);
@@ -25,8 +26,7 @@ class LineItemConsistencyServiceTest extends TestCase
 
         $settings = new Settings($provider);
 
-        // Mock the Logger
-        $logger = $this->createMock(LoggerInterface::class);
+        $logger = $logger ?? $this->createMock(LoggerInterface::class);
 
         return new LineItemConsistencyService($settings, $logger);
     }
@@ -49,7 +49,25 @@ class LineItemConsistencyServiceTest extends TestCase
 
     public function testSmallDiscrepancyAddsAdjustment(): void
     {
-        $service = $this->createService();
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())
+            ->method('info')
+            ->with(
+                $this->stringContains("Line item discrepancy detected. Expected: 10.00, Calculated: 9.98, Difference: 0.02. Appending 'Rounding Adjustment' line item to satisfy gateway validation."),
+                [
+                    'expectedAmount' => 10.00,
+                    'calculatedAmount' => 9.98,
+                    'difference' => 0.02,
+                    'spaceId' => null,
+                    'transactionId' => null,
+                ],
+            );
+
+        $service = $this->createService(
+            true,
+            RoundingStrategy::BY_LINE_ITEM,
+            $logger,
+        );
 
         $item = new LineItem();
         $item->uniqueId = '1';
@@ -100,7 +118,25 @@ class LineItemConsistencyServiceTest extends TestCase
 
     public function testDisabledConsistencyThrowsExceptionOnMismatch(): void
     {
-        $service = $this->createService(false);
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())
+            ->method('warning')
+            ->with(
+                $this->stringContains("Line item discrepancy of 0.01 detected (Expected: 10.00, Calculated: 9.99). Line item consistency enforcement is DISABLED. Proceeding with mismatched totals. The WeArePlanet API will likely reject this request or hide payment methods."),
+                [
+                    'expectedAmount' => 10.00,
+                    'calculatedAmount' => 9.99,
+                    'difference' => 0.01,
+                    'spaceId' => null,
+                    'transactionId' => null,
+                ],
+            );
+
+        $service = $this->createService(
+            false,
+            RoundingStrategy::BY_LINE_ITEM,
+            $logger,
+        );
 
         $item = new LineItem();
         $item->amountIncludingTax = 9.99;

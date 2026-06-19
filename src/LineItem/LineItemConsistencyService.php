@@ -42,11 +42,18 @@ class LineItemConsistencyService
      * @param LineItem[] $lineItems The original line items from the shop.
      * @param float $expectedTotal The grand total calculated by the shop.
      * @param string $currencyCode The currency of the transaction.
+     * @param int|null $spaceId The unique space identifier for log tracing.
+     * @param int|null $transactionId The unique transaction identifier for log tracing.
      * @return LineItem[] The consistent list of line items.
      * @throws LineItemConsistencyException If the discrepancy is too large to fix safely.
      */
-    public function ensureConsistency(array $lineItems, float $expectedTotal, string $currencyCode): array
-    {
+    public function ensureConsistency(
+        array $lineItems,
+        float $expectedTotal,
+        string $currencyCode,
+        ?int $spaceId = null,
+        ?int $transactionId = null,
+    ): array {
         $calculatedTotal = $this->calculateSum($lineItems);
         $difference = $expectedTotal - $calculatedTotal;
 
@@ -56,12 +63,22 @@ class LineItemConsistencyService
             return $lineItems;
         }
 
-        $this->logger->debug("Consistency Mismatch Detected: Shop Total: $expectedTotal, Line Item Sum: $calculatedTotal, Diff: $difference");
-
         // Feature Toggle Check
         // Some integrations may prefer a hard failure over automatic adjustments.
         if (!$this->settings->isLineItemConsistencyEnabled()) {
-            $this->logger->warning("Mismatch found ($difference) but auto-correction is DISABLED.");
+            $msg = sprintf(
+                "Line item discrepancy of %.2f detected (Expected: %.2f, Calculated: %.2f). Line item consistency enforcement is DISABLED. Proceeding with mismatched totals. The WeArePlanet API will likely reject this request or hide payment methods.",
+                $difference,
+                $expectedTotal,
+                $calculatedTotal,
+            );
+            $this->logger->warning($msg, [
+                'expectedAmount' => $expectedTotal,
+                'calculatedAmount' => $calculatedTotal,
+                'difference' => round($difference, 2),
+                'spaceId' => $spaceId,
+                'transactionId' => $transactionId,
+            ]);
             throw new LineItemConsistencyException("Mismatch found ($difference) but auto-correction is DISABLED.");
         }
 
@@ -76,7 +93,19 @@ class LineItemConsistencyService
 
         // Rounding Correction
         // We append a technical fee/discount item to bridge the gap.
-        $this->logger->info("Auto-correcting rounding difference of $difference by adding adjustment line item.");
+        $msg = sprintf(
+            "Line item discrepancy detected. Expected: %.2f, Calculated: %.2f, Difference: %.2f. Appending 'Rounding Adjustment' line item to satisfy gateway validation.",
+            $expectedTotal,
+            $calculatedTotal,
+            $difference,
+        );
+        $this->logger->info($msg, [
+            'expectedAmount' => $expectedTotal,
+            'calculatedAmount' => $calculatedTotal,
+            'difference' => round($difference, 2),
+            'spaceId' => $spaceId,
+            'transactionId' => $transactionId,
+        ]);
 
         $adjustmentItem = new LineItem();
         $adjustmentItem->uniqueId = self::ADJUSTMENT_SKU;

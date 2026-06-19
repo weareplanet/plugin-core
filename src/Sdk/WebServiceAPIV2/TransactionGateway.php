@@ -11,6 +11,7 @@ use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethod;
 use WeArePlanet\PluginCore\PaymentMethod\State as PaymentMethodState;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
+use WeArePlanet\PluginCore\Sdk\TransactionMapperTrait;
 use WeArePlanet\PluginCore\Settings\IntegrationMode as IntegrationModeEnum;
 use WeArePlanet\PluginCore\Settings\Settings;
 use WeArePlanet\PluginCore\Tax\Tax;
@@ -22,6 +23,7 @@ use WeArePlanet\PluginCore\Transaction\Transaction;
 use WeArePlanet\PluginCore\Transaction\TransactionContext;
 use WeArePlanet\PluginCore\Transaction\TransactionGatewayInterface;
 use WeArePlanet\PluginCore\Transaction\TransactionSearchCriteria;
+use WeArePlanet\Sdk\ApiException;
 use WeArePlanet\Sdk\Model\Address as SdkAddress;
 use WeArePlanet\Sdk\Model\AddressCreate as SdkAddressCreate;
 use WeArePlanet\Sdk\Model\CreationEntityState as SdkCreationEntityState;
@@ -39,6 +41,8 @@ use WeArePlanet\Sdk\Service\TransactionsService as SdkTransactionsService;
 
 class TransactionGateway implements TransactionGatewayInterface
 {
+    use TransactionMapperTrait;
+
     private SdkPaymentMethodConfigurationsService $paymentMethodConfigService;
     private SdkTransactionsService $transactionsService;
 
@@ -116,8 +120,27 @@ class TransactionGateway implements TransactionGatewayInterface
             $sdkTransaction = $this->transactionsService->getPaymentTransactionsId($transactionId, $spaceId, ['billingAddress', 'shippingAddress', 'lineItems', 'token']);
             return $this->mapToTransaction($sdkTransaction);
         } catch (\Throwable $e) {
-            $this->logger->debug("Gateway: Transaction $transactionId not found in Space $spaceId.");
-            return null;
+            if ($e instanceof ApiException && $e->getCode() === 404) {
+                $this->logger->debug(
+                    'Gateway: Transaction {transactionId} not found in Space {spaceId}.',
+                    [
+                        'spaceId' => $spaceId,
+                        'transactionId' => $transactionId,
+                    ],
+                );
+                return null;
+            }
+
+            $this->logger->error(
+                'Gateway: Failed to find transaction: {errorMessage}',
+                [
+                    'errorMessage' => $e->getMessage(),
+                    'exception' => $e,
+                    'spaceId' => $spaceId,
+                    'transactionId' => $transactionId,
+                ],
+            );
+            throw $e;
         }
     }
 
@@ -262,42 +285,6 @@ class TransactionGateway implements TransactionGatewayInterface
         return $sdkTaxCreate;
     }
 
-    private function mapToAddress(SdkAddress $sdkAddress): Address
-    {
-        $address = new Address();
-        $address->city = $sdkAddress->getCity();
-        $address->country = $sdkAddress->getCountry();
-        $address->familyName = $sdkAddress->getFamilyName();
-        $address->givenName = $sdkAddress->getGivenName();
-        $address->organizationName = $sdkAddress->getOrganizationName();
-        $address->phoneNumber = $sdkAddress->getPhoneNumber();
-        $address->postcode = $sdkAddress->getPostcode();
-        $address->street = $sdkAddress->getStreet();
-        $address->emailAddress = $sdkAddress->getEmailAddress();
-        $address->salutation = $sdkAddress->getSalutation();
-        $address->dateOfBirth = $this->toDateTimeImmutable($sdkAddress->getDateOfBirth());
-        $address->salesTaxNumber = $sdkAddress->getSalesTaxNumber();
-        return $address;
-    }
-
-    private function mapToLineItem(SdkLineItem $sdkItem): LineItem
-    {
-        $item = new LineItem();
-        $item->uniqueId = $sdkItem->getUniqueId();
-        $item->sku = $sdkItem->getSku();
-        $item->name = $sdkItem->getName();
-        $item->quantity = $sdkItem->getQuantity();
-        $item->amountIncludingTax = $sdkItem->getAmountIncludingTax();
-        $item->type = match ($sdkItem->getType()) {
-            SdkLineItemType::DISCOUNT => LineItem::TYPE_DISCOUNT,
-            SdkLineItemType::SHIPPING => LineItem::TYPE_SHIPPING,
-            SdkLineItemType::FEE => LineItem::TYPE_FEE,
-            default => LineItem::TYPE_PRODUCT,
-        };
-
-        return $item;
-    }
-
     private function mapToPaymentMethod(SdkPaymentMethodConfiguration $sdkPaymentMethodConfiguration): PaymentMethod
     {
         return new PaymentMethod(
@@ -309,84 +296,6 @@ class TransactionGateway implements TransactionGatewayInterface
             sortOrder: (int) $sdkPaymentMethodConfiguration->getSortOrder(),
             imageUrl: $sdkPaymentMethodConfiguration->getResolvedImageUrl(),
         );
-    }
-
-    private function mapToToken(SdkToken $sdkToken): Token
-    {
-        $token = new Token();
-        $token->id = $sdkToken->getId();
-        $token->spaceId = $sdkToken->getLinkedSpaceId();
-        $token->version = $sdkToken->getVersion();
-
-        $token->state = match ((string) $sdkToken->getState()) {
-            'ACTIVE' => TokenState::ACTIVE,
-            'CREATE' => TokenState::CREATE,
-            'DELETED' => TokenState::DELETED,
-            'DELETING' => TokenState::DELETING,
-            'INACTIVE' => TokenState::INACTIVE,
-            default => TokenState::ACTIVE,
-        };
-
-        return $token;
-    }
-
-    private function mapToTransaction(SdkTransaction $sdkTransaction): Transaction
-    {
-        $domain = new Transaction();
-        $domain->id = $sdkTransaction->getId();
-        $domain->spaceId = $sdkTransaction->getLinkedSpaceId();
-        $domain->version = $sdkTransaction->getVersion();
-
-        $domain->state = match ((string) $sdkTransaction->getState()) {
-            'PENDING' => StateEnum::PENDING,
-            'CONFIRMED' => StateEnum::CONFIRMED,
-            'PROCESSING' => StateEnum::PROCESSING,
-            'FAILED' => StateEnum::FAILED,
-            'AUTHORIZED' => StateEnum::AUTHORIZED,
-            'VOIDED' => StateEnum::VOIDED,
-            'COMPLETED' => StateEnum::COMPLETED,
-            'FULFILL' => StateEnum::FULFILL,
-            'DECLINE' => StateEnum::DECLINE,
-            default => StateEnum::PENDING,
-        };
-
-        $domain->merchantReference = $sdkTransaction->getMerchantReference();
-        $domain->customerId = $sdkTransaction->getCustomerId();
-        $domain->currency = $sdkTransaction->getCurrency();
-
-        $domain->authorizedAmount = $sdkTransaction->getAuthorizationAmount();
-        $domain->refundedAmount = $sdkTransaction->getRefundedAmount();
-
-        if ($sdkTransaction->getLineItems()) {
-            $domain->lineItems = array_map([$this, 'mapToLineItem'], $sdkTransaction->getLineItems());
-        }
-
-        $domain->createdOn = $this->toDateTimeImmutable($sdkTransaction->getCreatedOn());
-        $domain->authorizedOn = $this->toDateTimeImmutable($sdkTransaction->getAuthorizedOn());
-        $domain->completedOn = $this->toDateTimeImmutable($sdkTransaction->getCompletedOn());
-        $domain->failedOn = $this->toDateTimeImmutable($sdkTransaction->getFailedOn());
-        $domain->processingOn = $this->toDateTimeImmutable($sdkTransaction->getProcessingOn());
-
-        $domain->userFailureMessage = new LocalizedString($sdkTransaction->getUserFailureMessage());
-
-        $reason = $sdkTransaction->getFailureReason();
-        if ($reason !== null) {
-            $domain->failureReason = new LocalizedString($reason->getDescription() ?? $reason->getName());
-        }
-
-        if ($sdkTransaction->getToken()) {
-            $domain->token = $this->mapToToken($sdkTransaction->getToken());
-        }
-
-        if ($sdkTransaction->getBillingAddress()) {
-            $domain->billingAddress = $this->mapToAddress($sdkTransaction->getBillingAddress());
-        }
-
-        if ($sdkTransaction->getShippingAddress()) {
-            $domain->shippingAddress = $this->mapToAddress($sdkTransaction->getShippingAddress());
-        }
-
-        return $domain;
     }
 
     public function search(int $spaceId, TransactionSearchCriteria $criteria): array
@@ -422,14 +331,6 @@ class TransactionGateway implements TransactionGatewayInterface
             $this->logger->error("Gateway: Failed to search transactions: {$e->getMessage()}");
             throw new TransactionException("Unable to search transactions: {$e->getMessage()}", 0, $e);
         }
-    }
-
-    private function toDateTimeImmutable(?\DateTime $date): ?\DateTimeImmutable
-    {
-        if (!$date) {
-            return null;
-        }
-        return \DateTimeImmutable::createFromMutable($date);
     }
 
     public function update(int $transactionId, int $version, TransactionContext $context): Transaction

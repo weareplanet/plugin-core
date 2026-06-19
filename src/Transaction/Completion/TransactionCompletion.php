@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Transaction\Completion;
 
+use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Render\JsonStringableTrait;
 
 /**
@@ -34,4 +35,9 @@ class TransactionCompletion
      * @var list<mixed>|null The line items to capture (null for full capture).
      */
     public ?array $lineItems = null;
+
+    /**
+     * @var LocalizedString|null The localized failure reason from the API.
+     */
+    public ?LocalizedString $failureReason = null;
 }

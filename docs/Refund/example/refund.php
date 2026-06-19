@@ -97,6 +97,10 @@ function list_refunds($service, $spaceId, $transactionId)
         }
         foreach ($refunds as $refund) {
             echo " > Refund ID: {$refund->id}, Amount: {$refund->amount}, State: {$refund->state->value}\n";
+            // Failed refunds now carry the gateway's localized failure reason.
+            if ($refund->failureReason !== null) {
+                echo "   Failure Reason: " . $refund->failureReason->localize('en-US') . "\n";
+            }
         }
     } catch (\Exception $e) {
         echo " > Failed to list refunds: " . $e->getMessage() . "\n";
