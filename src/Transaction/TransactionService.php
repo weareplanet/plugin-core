@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\Transaction;
 
 use WeArePlanet\PluginCore\LineItem\LineItemConsistencyService;
+use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethod;
+use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodCollection;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodSorting;
 use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
 use WeArePlanet\PluginCore\Transaction\Exception\TransactionTotalNegativeException;
@@ -30,13 +32,13 @@ class TransactionService
     public function createTransaction(TransactionContext $context): Transaction
     {
         try {
-            $this->logger->debug(sprintf(
-                "Creating new transaction for Merchant Ref: %s",
-                $context->merchantReference ?? 'unknown',
-            ));
+            $this->logger->debug("Creating new transaction.", [
+                'merchantReference' => $context->merchantReference,
+                'spaceId' => $context->spaceId,
+            ]);
 
             if (($context->expectedGrandTotal ?? 0.0) < -0.00000001) {
-                $context->lineItems = $this->consistencyService->sanitizeNegativeLineItems($context->lineItems);
+                $context->lineItems = $this->consistencyService->sanitizeNegativeLineItems($context->lineItems)->all();
                 $context->expectedGrandTotal = 0.0;
             }
 
@@ -46,24 +48,31 @@ class TransactionService
                 $context->currencyCode,
                 $context->spaceId,
                 $context->transactionId,
-            );
+            )->all();
 
             $this->validateContext($context);
 
             $result = $this->gateway->create($context);
 
-            $this->logger->debug(sprintf(
-                "Transaction created. ID: %s, State: %s",
-                $result->id ?? 'unknown',
-                $result->state?->value ?? 'unknown',
-            ));
+            $this->logger->debug("Transaction created.", [
+                'transactionId' => $result->id ?? null,
+                'state' => $result->state->value,
+                'spaceId' => $context->spaceId,
+            ]);
             return $result;
         } catch (\Throwable $e) {
-            $this->logger->error("Create failed: {$e->getMessage()}");
+            $this->logger->error("Transaction creation failed.", [
+                'spaceId' => $context->spaceId,
+                'exception' => $e,
+            ]);
             if ($e instanceof TransactionException) {
                 throw $e;
             }
-            throw new TransactionException("Unable to create transaction: " . $e->getMessage(), 0, $e);
+            throw new TransactionException(
+                "Unable to create transaction in space {$context->spaceId}: " . $e->getMessage(),
+                new LocalizedString("Unable to create transaction."),
+                $e,
+            );
         }
     }
 
@@ -73,13 +82,16 @@ class TransactionService
      * @param int $spaceId The space ID.
      * @param int $transactionId The transaction ID.
      * @param PaymentMethodSorting $sortBy The sorting criteria.
-     * @return PaymentMethod[] The available payment methods.
+     * @return PaymentMethodCollection The available payment methods.
      */
-    public function getAvailablePaymentMethods(int $spaceId, int $transactionId, PaymentMethodSorting $sortBy = PaymentMethodSorting::DEFAULT): array
+    public function getAvailablePaymentMethods(int $spaceId, int $transactionId, PaymentMethodSorting $sortBy = PaymentMethodSorting::DEFAULT): PaymentMethodCollection
     {
-        $this->logger->debug("Fetching available payment methods for Transaction $transactionId in Space $spaceId.");
+        $this->logger->debug("Fetching available payment methods.", [
+            'transactionId' => $transactionId,
+            'spaceId' => $spaceId,
+        ]);
 
-        $methods = $this->gateway->getAvailablePaymentMethods($spaceId, $transactionId);
+        $methods = $this->gateway->getAvailablePaymentMethods($spaceId, $transactionId)->all();
 
         if ($sortBy === PaymentMethodSorting::NAME) {
             $this->logger->debug("Sorting payment methods by name.");
@@ -95,9 +107,13 @@ class TransactionService
             });
         }
 
-        $this->logger->debug(sprintf("Found %d payment methods.", count($methods)));
+        $this->logger->debug("Found payment methods.", [
+            'count' => count($methods),
+            'transactionId' => $transactionId,
+            'spaceId' => $spaceId,
+        ]);
 
-        return $methods;
+        return new PaymentMethodCollection(...$methods);
     }
 
     /**
@@ -121,7 +137,11 @@ class TransactionService
                 return $transaction->userFailureMessage->localize($shopLocale) ?? $defaultMessage;
             }
         } catch (\Throwable $e) {
-            $this->logger->debug("Failed to retrieve failure message for Transaction $transactionId in Space $spaceId: {$e->getMessage()}");
+            $this->logger->debug("Failed to retrieve failure message.", [
+                'transactionId' => $transactionId,
+                'spaceId' => $spaceId,
+                'exception' => $e,
+            ]);
         }
         return $defaultMessage;
     }
@@ -131,9 +151,9 @@ class TransactionService
      *
      * @param int $spaceId The space ID.
      * @param int $limit The number of transactions to retrieve (default: 10).
-     * @return Transaction[] The latest transactions.
+     * @return TransactionCollection The latest transactions.
      */
-    public function getLatestTransactions(int $spaceId, int $limit = 10): array
+    public function getLatestTransactions(int $spaceId, int $limit = 10): TransactionCollection
     {
         $criteria = new TransactionSearchCriteria();
         $criteria->limit = $limit;
@@ -147,11 +167,14 @@ class TransactionService
      *
      * @param int $spaceId The space ID.
      * @param int $transactionId The transaction ID.
-     * @return string The payment URL.
+     * @return PaymentUrl The payment URL value object.
      */
-    public function getPaymentUrl(int $spaceId, int $transactionId): string
+    public function getPaymentUrl(int $spaceId, int $transactionId): PaymentUrl
     {
-        $this->logger->debug("Fetching payment URL for Transaction $transactionId in Space $spaceId.");
+        $this->logger->debug("Fetching payment URL.", [
+            'transactionId' => $transactionId,
+            'spaceId' => $spaceId,
+        ]);
         return $this->gateway->getPaymentUrl($spaceId, $transactionId);
     }
 
@@ -174,9 +197,9 @@ class TransactionService
      *
      * @param int $spaceId The space ID.
      * @param TransactionSearchCriteria $criteria The search criteria.
-     * @return Transaction[] The matching transactions.
+     * @return TransactionCollection The matching transactions.
      */
-    public function searchTransactions(int $spaceId, TransactionSearchCriteria $criteria): array
+    public function searchTransactions(int $spaceId, TransactionSearchCriteria $criteria): TransactionCollection
     {
         return $this->gateway->search($spaceId, $criteria);
     }
@@ -191,7 +214,10 @@ class TransactionService
     protected function updateTransaction(TransactionContext $context): Transaction
     {
         try {
-            $this->logger->debug("Updating transaction {$context->transactionId}");
+            $this->logger->debug("Updating transaction.", [
+                'transactionId' => $context->transactionId,
+                'spaceId' => $context->spaceId,
+            ]);
 
             // Consistency checks should ideally be done here too if line items change,
             // but strict requirement says "add validation... wherever the TransactionContext is validated".
@@ -204,16 +230,30 @@ class TransactionService
 
             $existing = $this->gateway->find($context->spaceId, $context->transactionId);
             if (!$existing) {
-                $this->logger->error("Update failed: Transaction {$context->transactionId} not found.");
-                throw new TransactionException("Transaction not found for update.");
+                $this->logger->error("Update failed: transaction not found.", [
+                    'transactionId' => $context->transactionId,
+                    'spaceId' => $context->spaceId,
+                ]);
+                throw new TransactionException(
+                    "Transaction {$context->transactionId} in space {$context->spaceId} not found for update.",
+                    new LocalizedString("Transaction not found for update."),
+                );
             }
 
             $result = $this->gateway->update($existing->id, $existing->version, $context);
 
-            $this->logger->debug("Transaction {$result->id} updated. State: {$result->state->value}");
+            $this->logger->debug("Transaction updated.", [
+                'transactionId' => $result->id,
+                'state' => $result->state->value,
+                'spaceId' => $context->spaceId,
+            ]);
             return $result;
         } catch (\Throwable $e) {
-            $this->logger->error("Update failed for Transaction {$context->transactionId}: {$e->getMessage()}");
+            $this->logger->error("Transaction update failed.", [
+                'transactionId' => $context->transactionId,
+                'spaceId' => $context->spaceId,
+                'exception' => $e,
+            ]);
             throw $e;
         }
     }
@@ -240,11 +280,14 @@ class TransactionService
                 // CHECK: Use Domain Enum
                 if (!$existingTransaction || $existingTransaction->state !== State::PENDING) {
                     // Throwing here forces the catch block to trigger the fallback
-                    throw new TransactionException("Transaction not PENDING or not found.");
+                    throw new TransactionException(
+                        "Transaction {$context->transactionId} in space {$context->spaceId} not PENDING or not found.",
+                        new LocalizedString("Transaction not PENDING or not found."),
+                    );
                 }
 
                 if (($context->expectedGrandTotal ?? 0.0) < -0.00000001) {
-                    $context->lineItems = $this->consistencyService->sanitizeNegativeLineItems($context->lineItems);
+                    $context->lineItems = $this->consistencyService->sanitizeNegativeLineItems($context->lineItems)->all();
                     $context->expectedGrandTotal = 0.0;
                 }
 
@@ -256,7 +299,11 @@ class TransactionService
                 );
             } catch (\Throwable $e) {
                 // Fallback Logic
-                $this->logger->notice("Update failed... Fallback to CREATE.");
+                $this->logger->notice("Update failed; falling back to CREATE.", [
+                    'transactionId' => $context->transactionId,
+                    'spaceId' => $context->spaceId,
+                    'exception' => $e,
+                ]);
                 $context->transactionId = null;
                 $result = $this->createTransaction($context);
             }
@@ -266,10 +313,19 @@ class TransactionService
         if ($result->id !== $context->transactionId) {
             try {
                 $persistenceStrategy->persist($result->id);
-                $this->logger->debug("Persisted new transaction ID {$result->id} via strategy.");
+                $this->logger->debug("Persisted new transaction via strategy.", [
+                    'transactionId' => $result->id,
+                ]);
             } catch (\Throwable $e) {
-                $this->logger->critical("Transaction created ({$result->id}) but Persistence Strategy failed: {$e->getMessage()}");
-                throw new TransactionException("System Error: Could not save transaction session.", 0, $e);
+                $this->logger->critical("Transaction created but persistence strategy failed.", [
+                    'transactionId' => $result->id,
+                    'exception' => $e,
+                ]);
+                throw new TransactionException(
+                    "System Error: Could not save transaction session for transaction {$result->id}: " . $e->getMessage(),
+                    new LocalizedString("System Error: Could not save transaction session."),
+                    $e,
+                );
             }
         }
 

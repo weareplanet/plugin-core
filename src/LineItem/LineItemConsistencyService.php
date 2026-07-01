@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\LineItem;
 
 use WeArePlanet\PluginCore\LineItem\Exception\LineItemConsistencyException;
+use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Settings\Settings;
 
@@ -35,7 +36,7 @@ class LineItemConsistencyService
     {
         $strategy = $this->settings->getLineItemRoundingStrategy();
 
-        $this->logger->debug("Calculating sum using strategy: " . $strategy->value);
+        $this->logger->debug("Calculating line item sum.", ['strategy' => $strategy->value]);
 
         $sum = 0.0;
         foreach ($lineItems as $item) {
@@ -50,7 +51,7 @@ class LineItemConsistencyService
         }
 
         $result = round($sum, 2);
-        $this->logger->debug("Calculated total: $result");
+        $this->logger->debug("Calculated line item total.", ['total' => $result]);
 
         return $result;
     }
@@ -68,7 +69,7 @@ class LineItemConsistencyService
      * @param string $currencyCode The currency code (for context, unused for calculation).
      * @param int|null $spaceId The unique space identifier for log tracing.
      * @param int|null $transactionId The unique transaction identifier for log tracing.
-     * @return LineItem[] The list of line items, potentially including an adjustment.
+     * @return LineItemCollection The list of line items, potentially including an adjustment.
      * @throws LineItemConsistencyException If the discrepancy is too large to safely auto-correct.
      */
     public function ensureConsistency(
@@ -77,32 +78,32 @@ class LineItemConsistencyService
         string $currencyCode,
         ?int $spaceId = null,
         ?int $transactionId = null,
-    ): array {
+    ): LineItemCollection {
         $calculatedTotal = $this->calculateSum($lineItems);
         $difference = $expectedTotal - $calculatedTotal;
 
         // Perfect Match: No action needed.
         if (abs($difference) < 0.000001) {
-            return $lineItems;
+            return new LineItemCollection(...$lineItems);
         }
 
         // Feature Disabled: We abort to prevent processing a transaction that
         // the gateway will likely reject due to a total mismatch.
         if (!$this->settings->isLineItemConsistencyEnabled()) {
-            $msg = sprintf(
-                "Line item discrepancy of %.2f detected (Expected: %.2f, Calculated: %.2f). Line item consistency enforcement is DISABLED. Proceeding with mismatched totals. The WeArePlanet API will likely reject this request or hide payment methods.",
-                $difference,
-                $expectedTotal,
-                $calculatedTotal,
+            $this->logger->warning(
+                "Line item discrepancy detected but consistency enforcement is DISABLED. Proceeding with mismatched totals; the WeArePlanet API will likely reject this request or hide payment methods.",
+                [
+                    'expectedAmount' => $expectedTotal,
+                    'calculatedAmount' => $calculatedTotal,
+                    'difference' => round($difference, 2),
+                    'spaceId' => $spaceId,
+                    'transactionId' => $transactionId,
+                ],
             );
-            $this->logger->warning($msg, [
-                'expectedAmount' => $expectedTotal,
-                'calculatedAmount' => $calculatedTotal,
-                'difference' => round($difference, 2),
-                'spaceId' => $spaceId,
-                'transactionId' => $transactionId,
-            ]);
-            throw new LineItemConsistencyException("Mismatch found ($difference) but auto-correction is DISABLED.");
+            throw new LineItemConsistencyException(
+                "Mismatch found ($difference) but auto-correction is DISABLED.",
+                new LocalizedString('Line item discrepancy detected but auto-correction is disabled.'),
+            );
         }
 
         // Safety Guard: A difference larger than 0.10 (10 cents) usually indicates
@@ -110,24 +111,29 @@ class LineItemConsistencyService
         // a simple rounding error. Auto-correcting large amounts is risky for accounting.
         if (abs($difference) > self::MAX_ALLOWED_DIFFERENCE) {
             $msg = sprintf("Rounding difference (%f) exceeds safety threshold (%f). Aborting.", $difference, self::MAX_ALLOWED_DIFFERENCE);
-            $this->logger->error($msg);
-            throw new LineItemConsistencyException($msg);
+            $this->logger->error("Rounding difference exceeds safety threshold; aborting.", [
+                'difference' => round($difference, 2),
+                'threshold' => self::MAX_ALLOWED_DIFFERENCE,
+                'spaceId' => $spaceId,
+                'transactionId' => $transactionId,
+            ]);
+            throw new LineItemConsistencyException(
+                $msg,
+                new LocalizedString('Rounding difference exceeds safety threshold.'),
+            );
         }
 
         // Fix it: Append a system-generated line item to balance the total.
-        $msg = sprintf(
-            "Line item discrepancy detected. Expected: %.2f, Calculated: %.2f, Difference: %.2f. Appending 'Rounding Adjustment' line item to satisfy gateway validation.",
-            $expectedTotal,
-            $calculatedTotal,
-            $difference,
+        $this->logger->info(
+            "Line item discrepancy detected; appending 'Rounding Adjustment' line item to satisfy gateway validation.",
+            [
+                'expectedAmount' => $expectedTotal,
+                'calculatedAmount' => $calculatedTotal,
+                'difference' => round($difference, 2),
+                'spaceId' => $spaceId,
+                'transactionId' => $transactionId,
+            ],
         );
-        $this->logger->info($msg, [
-            'expectedAmount' => $expectedTotal,
-            'calculatedAmount' => $calculatedTotal,
-            'difference' => round($difference, 2),
-            'spaceId' => $spaceId,
-            'transactionId' => $transactionId,
-        ]);
 
         $adjustmentItem = new LineItem();
         $adjustmentItem->uniqueId = self::ADJUSTMENT_SKU;
@@ -140,7 +146,7 @@ class LineItemConsistencyService
 
         $lineItems[] = $adjustmentItem;
 
-        return $lineItems;
+        return new LineItemCollection(...$lineItems);
     }
 
     /**
@@ -152,9 +158,9 @@ class LineItemConsistencyService
      * the transaction to be created as "Free" in the portal.
      *
      * @param LineItem[] $lineItems
-     * @return LineItem[] The sanitized list (cloned to avoid side effects).
+     * @return LineItemCollection The sanitized list (cloned to avoid side effects).
      */
-    public function sanitizeNegativeLineItems(array $lineItems): array
+    public function sanitizeNegativeLineItems(array $lineItems): LineItemCollection
     {
         $totalSum = 0.0;
         $discountSum = 0.0;
@@ -168,12 +174,12 @@ class LineItemConsistencyService
 
         // If total is non-negative (within float epsilon), nothing to do.
         if ($totalSum >= -0.00000001) {
-            return $lineItems;
+            return new LineItemCollection(...$lineItems);
         }
 
         // If no discounts found to heal, we cannot fix the negative total here.
         if (abs($discountSum) < 0.00000001) {
-            return $lineItems;
+            return new LineItemCollection(...$lineItems);
         }
 
         $this->logger->warning("Transaction total was negative. Auto-capped discounts to equal product value.");
@@ -197,6 +203,6 @@ class LineItemConsistencyService
             $sanitizedItems[] = $cloned;
         }
 
-        return $sanitizedItems;
+        return new LineItemCollection(...$sanitizedItems);
     }
 }

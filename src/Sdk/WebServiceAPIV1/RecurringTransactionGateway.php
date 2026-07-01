@@ -48,15 +48,25 @@ class RecurringTransactionGateway implements RecurringTransactionGatewayInterfac
      */
     public function processRecurringPayment(int $spaceId, int $transactionId): Transaction
     {
-        $this->logger->debug("Processing recurring payment (ID: $transactionId).");
+        $this->logger->debug("Processing recurring payment.", [
+            'transactionId' => $transactionId,
+            'spaceId' => $spaceId,
+        ]);
 
         try {
             $sdkTransaction = $this->transactionService->processWithoutUserInteraction($spaceId, $transactionId);
-            $this->logger->debug("Recurring payment processed successfully for Transaction $transactionId.");
+            $this->logger->debug("Recurring payment processed successfully.", [
+                'transactionId' => $transactionId,
+                'spaceId' => $spaceId,
+            ]);
 
             return $this->mapToTransaction($sdkTransaction);
         } catch (\Exception $e) {
-            $this->logger->error("Failed to process recurring payment for Transaction $transactionId: " . $e->getMessage());
+            $this->logger->error("Failed to process recurring payment.", [
+                'transactionId' => $transactionId,
+                'spaceId' => $spaceId,
+                'exception' => $e,
+            ]);
             throw $e;
         }
     }

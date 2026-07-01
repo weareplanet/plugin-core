@@ -13,7 +13,7 @@ The recurring payment process triggers a charge attempt on a previously successf
 The logic is encapsulated in the `RecurringTransactionGatewayInterface`. This interface exposes a specific method for processing recurring charges: `processRecurringPayment`.
 
 **3. Token and Billing Address Requirements**
-For a recurring payment to succeed, a valid payment token and billing address must be present on the original transaction. If either is missing, the service immediately throws a `\RuntimeException` (Fail Fast approach).
+For a recurring payment to succeed, a valid payment token and billing address must be present on the original transaction. Following the Fail Fast approach, the service throws a domain exception with both a technical message and a localized reason: a `MissingTokenException` (in `WeArePlanet\PluginCore\Token\Exception`) when the token is missing, and a `TransactionException` (in `WeArePlanet\PluginCore\Transaction\Exception`) when the billing address is missing.
 
 ### Integration Guide
 
@@ -68,7 +68,7 @@ For a recurring payment to succeed, a valid payment token and billing address mu
          echo "Failure reason: " . $newTransaction->failureReason->localize('en-US');
      }
  } catch (TokenException $e) {
-     $logger->error("Token creation failed: " . ($e->getLocalizedReason()?->localize('en-US') ?? $e->getMessage()));
+     $logger->error("Token creation failed: " . ($e->getLocalizedMessage()?->localize('en-US') ?? $e->getMessage()));
  } catch (\Throwable $e) {
      $logger->error("Recurring payment failed: " . $e->getMessage());
  }

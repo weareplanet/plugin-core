@@ -8,7 +8,9 @@ use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use WeArePlanet\PluginCore\Address\Address;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
+use WeArePlanet\PluginCore\Token\Exception\MissingTokenException;
 use WeArePlanet\PluginCore\Token\Token;
+use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
 use WeArePlanet\PluginCore\Transaction\RecurringTransactionGatewayInterface;
 use WeArePlanet\PluginCore\Transaction\RecurringTransactionService;
 use WeArePlanet\PluginCore\Transaction\Transaction;
@@ -114,7 +116,7 @@ class RecurringTransactionServiceTest extends TestCase
             ->with($spaceId, $transactionId)
             ->willReturn($originalTransaction);
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(TransactionException::class);
         $this->expectExceptionMessage("Transaction $transactionId has no billing address.");
 
         $this->service->processRecurringPayment($spaceId, $transactionId);
@@ -139,7 +141,7 @@ class RecurringTransactionServiceTest extends TestCase
             ->with($spaceId, $transactionId)
             ->willReturn($originalTransaction);
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(MissingTokenException::class);
         $this->expectExceptionMessage(
             "Transaction $transactionId has no token. "
             . "The original transaction must be created with tokenizationMode = FORCE_CREATION "

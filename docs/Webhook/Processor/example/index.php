@@ -112,10 +112,6 @@ function create_mock_request(string $technicalName, string $state, int $entityId
         'entityId' => $entityId,
         'spaceId' => 12345,
     ];
-    $reflection = new \ReflectionClass(Request::class);
-    $constructor = $reflection->getConstructor();
-    $constructor->setAccessible(true);
-    $request = $reflection->newInstanceWithoutConstructor();
-    $constructor->invoke($request, [], $mockBody, json_encode($mockBody));
-    return $request;
+    // Use the public factory instead of reflection to build a Request from raw data.
+    return Request::create([], $mockBody, json_encode($mockBody));
 }

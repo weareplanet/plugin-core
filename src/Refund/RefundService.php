@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\Refund;
 
 use WeArePlanet\PluginCore\LineItem\LineItem;
+use WeArePlanet\PluginCore\LineItem\LineItemCollection;
+use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Refund\Exception\InvalidRefundException;
 use WeArePlanet\PluginCore\Transaction\Transaction;
@@ -30,7 +32,10 @@ class RefundService
      */
     public function createRefund(int $spaceId, RefundContext $context): Refund
     {
-        $this->logger->debug("Starting refund process for Transaction {$context->transactionId} in Space $spaceId.");
+        $this->logger->debug("Starting refund process.", [
+            'transactionId' => $context->transactionId,
+            'spaceId' => $spaceId,
+        ]);
 
         // Load the original transaction to verify refund possibility.
         $originalTransaction = $this->transactionService->getTransaction($spaceId, $context->transactionId);
@@ -64,9 +69,9 @@ class RefundService
      * Filters out discounts and items with zero or negative amounts.
      *
      * @param Transaction $transaction
-     * @return LineItem[]
+     * @return LineItemCollection
      */
-    public function getRefundableLineItems(Transaction $transaction): array
+    public function getRefundableLineItems(Transaction $transaction): LineItemCollection
     {
         $refundableItems = [];
 
@@ -77,13 +82,10 @@ class RefundService
             }
         }
 
-        return $refundableItems;
+        return new LineItemCollection(...$refundableItems);
     }
 
-    /**
-     * @return Refund[]
-     */
-    public function getRefunds(int $spaceId, int $transactionId): array
+    public function getRefunds(int $spaceId, int $transactionId): RefundCollection
     {
         return $this->gateway->findByTransaction($spaceId, $transactionId);
     }
@@ -106,8 +108,15 @@ class RefundService
         // We use a strict comparison here as refund amounts are typically handled as exact values.
 
         if ($context->amount > $remainingAmount) {
-            $this->logger->error("Validation failed: Refund amount {$context->amount} exceeds remaining amount $remainingAmount.");
-            throw new InvalidRefundException("Refund amount exceeds the remaining authorized amount.");
+            $this->logger->error("Validation failed: refund amount exceeds the remaining authorized amount.", [
+                'transactionId' => $context->transactionId,
+                'requestedAmount' => $context->amount,
+                'remainingAmount' => $remainingAmount,
+            ]);
+            throw new InvalidRefundException(
+                "Refund amount {$context->amount} exceeds the remaining authorized amount {$remainingAmount} for transaction {$context->transactionId}.",
+                new LocalizedString("Refund amount exceeds the remaining authorized amount."),
+            );
         }
 
         // Check Line Items and Consistency
@@ -123,16 +132,25 @@ class RefundService
                 $originalItem = $this->findLineItem($originalTransaction->lineItems, $uId);
 
                 if (!$originalItem) {
-                    throw new InvalidRefundException("Line item with Unique ID '$uId' not found in original transaction.");
+                    throw new InvalidRefundException(
+                        "Line item with Unique ID '$uId' not found in original transaction {$originalTransaction->id}.",
+                        new LocalizedString("Line item with Unique ID '$uId' not found in original transaction."),
+                    );
                 }
 
                 // Validate specific item types and amounts.
                 if ($originalItem->type === LineItem::TYPE_DISCOUNT) {
-                    throw new InvalidRefundException("Cannot refund line item '{$uId}'. Discounts cannot be refunded.");
+                    throw new InvalidRefundException(
+                        "Cannot refund line item '{$uId}'. Discounts cannot be refunded.",
+                        new LocalizedString("Cannot refund line item '{$uId}'. Discounts cannot be refunded."),
+                    );
                 }
 
                 if ($originalItem->amountIncludingTax <= 0.0) {
-                    throw new InvalidRefundException("Cannot refund line item '{$uId}'. Items with zero or negative amounts cannot be refunded.");
+                    throw new InvalidRefundException(
+                        "Cannot refund line item '{$uId}'. Items with zero or negative amounts cannot be refunded.",
+                        new LocalizedString("Cannot refund line item '{$uId}'. Items with zero or negative amounts cannot be refunded."),
+                    );
                 }
 
                 // Calculate implied reduction for this item
@@ -145,7 +163,10 @@ class RefundService
 
                 // If refund quantity exceeds original, that's an error.
                 if ($quantity > $originalItem->quantity) {
-                    throw new InvalidRefundException("Refund quantity $quantity for item '$uId' exceeds original quantity {$originalItem->quantity}.");
+                    throw new InvalidRefundException(
+                        "Refund quantity $quantity for item '$uId' exceeds original quantity {$originalItem->quantity} in transaction {$originalTransaction->id}.",
+                        new LocalizedString("Refund quantity exceeds original quantity."),
+                    );
                 }
 
                 $remainingQuantity = $originalItem->quantity - $quantity;
@@ -153,12 +174,16 @@ class RefundService
                 $itemTotalReduction = ($quantity * $originalUnitPrice) + ($remainingQuantity * $unitPriceReduction);
 
                 if ($itemTotalReduction > $originalItem->amountIncludingTax + 0.01) {
-                    throw new InvalidRefundException(sprintf(
-                        "Refund amount %.2f for item '%s' exceeds original item amount %.2f.",
-                        $itemTotalReduction,
-                        $uId,
-                        $originalItem->amountIncludingTax,
-                    ));
+                    throw new InvalidRefundException(
+                        sprintf(
+                            "Refund amount %.2f for item '%s' exceeds original item amount %.2f in transaction %d.",
+                            $itemTotalReduction,
+                            $uId,
+                            $originalItem->amountIncludingTax,
+                            $originalTransaction->id,
+                        ),
+                        new LocalizedString("Refund amount exceeds original item amount."),
+                    );
                 }
 
                 $calculatedTotalReduction += $itemTotalReduction;
@@ -167,11 +192,15 @@ class RefundService
             // Consistency Check: Expected Total vs Context Total
             // Allow small float epsilon difference
             if (abs($calculatedTotalReduction - $context->amount) > 0.01) {
-                throw new InvalidRefundException(sprintf(
-                    "Consistency Error: Total provided refund amount (%.2f) does not match the sum of line item reductions (%.2f). Formula: (QtyReturned * UnitPrice) + (RemainingQty * UnitPriceReduction).",
-                    $context->amount,
-                    $calculatedTotalReduction,
-                ));
+                throw new InvalidRefundException(
+                    sprintf(
+                        "Consistency Error: Total provided refund amount (%.2f) does not match the sum of line item reductions (%.2f) for transaction %d.",
+                        $context->amount,
+                        $calculatedTotalReduction,
+                        $originalTransaction->id,
+                    ),
+                    new LocalizedString("Total refund amount does not match the sum of line item reductions."),
+                );
             }
         }
     }

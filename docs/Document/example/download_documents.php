@@ -127,8 +127,8 @@ try {
     // Use PluginCore RefundService to find refunds
     $refunds = $refundService->getRefunds((int)$spaceId, (int)$transactionId);
 
-    if (!empty($refunds) && count($refunds) > 0) {
-        $refund = $refunds[0];
+    if (!$refunds->isEmpty()) {
+        $refund = $refunds->first();
         $refundId = $refund->id;
         echo "Found Refund ID: $refundId\n";
 

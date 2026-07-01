@@ -41,7 +41,7 @@ $signatureGateway = new WebhookSignatureGateway($sdkProvider, $logger);
 $webhookService = new WebhookService(
     $managementGateway,
     $signatureGateway,
-    $logger
+    $logger,
 );
 
 echo "Starting Webhook Management Demo in Space $spaceId...\n\n";
@@ -54,44 +54,33 @@ $config = new WebhookConfig(
     url: 'https://example.com/webhook/callback/' . $uniqueId,
     name: 'Demo Webhook ' . $uniqueId,
     entity: WebhookListener::TRANSACTION, // Enum
-    eventStates: [TransactionState::AUTHORIZED->value] // Array of states
+    eventStates: [TransactionState::AUTHORIZED->value], // Array of states
 );
 
+$myUrl = null;
 try {
-    $webhookService->installWebhook((int)$spaceId, $config);
-    echo "SUCCESS: Webhook installed.\n";
+    // installWebhook returns the created URL, so there is no need to scan the
+    // (paginated) list of every URL in the space to find it afterwards.
+    $myUrl = $webhookService->installWebhook((int)$spaceId, $config);
+    echo "SUCCESS: Webhook installed. URL ID: {$myUrl->id}, URL: {$myUrl->url}\n";
 } catch (\Exception $e) {
     exit("FAILED: " . $e->getMessage() . "\n");
 }
 
-// List the existing webhook configurations for the space.
+// List the existing webhook configurations and locate our listener.
 echo "\n--- STEP 2: Listing Webhooks ---\n";
+$myListener = null;
 try {
     $urls = $webhookService->listUrls((int)$spaceId);
-
     echo "Found " . count($urls) . " Webhook URL(s).\n";
+    echo "URL: ID={$myUrl->id}, Name={$myUrl->name}, URL={$myUrl->url}\n";
 
-    // Find our recently created URL and Listener
-    $myUrl = null;
-    foreach ($urls as $url) {
-        if ($url->name === $config->name) {
-            $myUrl = $url;
-            echo "URL Found: ID=" . $url->id . ", Name=" . $url->name . ", URL=" . $url->url . "\n";
+    // Fetch the listener for our URL (server-side filtered by URL id).
+    foreach ($webhookService->getWebhookListeners((int)$spaceId, $myUrl->id) as $listener) {
+        if ($listener->name === $config->name) {
+            $myListener = $listener;
+            echo "Listener Found: ID=" . $listener->id . ", Name=" . $listener->name . "\n";
             break;
-        }
-    }
-
-    $myListener = null;
-    if ($myUrl) {
-        // Fetch listeners specifically for this URL
-        $listeners = $webhookService->getWebhookListeners((int)$spaceId, $myUrl->id);
-        foreach ($listeners as $listener) {
-            // In the installWebhook method, we use the same name for the listener and URL
-            if ($listener->name === $config->name) {
-                $myListener = $listener;
-                echo "Listener Found: ID=" . $listener->id . ", Name=" . $listener->name . "\n";
-                break;
-            }
         }
     }
 } catch (\Exception $e) {
@@ -110,15 +99,15 @@ if ($myUrl) {
     }
 }
 
-// Uninstall the webhook by removing its listeners.
-// This ensures that the system stops sending events to the callback URL.
+// Uninstall the webhook by removing its listeners AND the URL definition.
+// Deleting only the listeners would leave the URL registered in the portal,
+// so the webhook keeps showing up. deleteWebhookUrl(..., cascade: true) first
+// removes every listener attached to the URL and then deletes the URL itself.
 if ($myUrl) {
     echo "\n--- STEP 4: Uninstalling (Cleanup) ---\n";
     try {
-        // Remove all listeners associated with the URL.
-        $webhookService->deleteWebhookListenersForUrl((int)$spaceId, $myUrl->id);
-        echo "SUCCESS: Webhook Listeners removed for URL ID " . $myUrl->id . ".\n";
-
+        $deletedListeners = $webhookService->deleteWebhookUrl((int)$spaceId, $myUrl->id, cascade: true);
+        echo "SUCCESS: Removed $deletedListeners listener(s) and Webhook URL ID " . $myUrl->id . ".\n";
     } catch (\Exception $e) {
         echo "FAILED to uninstall: " . $e->getMessage() . "\n";
     }

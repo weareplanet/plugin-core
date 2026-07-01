@@ -58,13 +58,13 @@ class RefundGatewayTest extends TestCase
             ->method('search')
             ->willReturn([$sdkRefund]);
 
-        $results = $this->gateway->findByTransaction($spaceId, $transactionId);
+        $results = $this->gateway->findByTransaction($spaceId, $transactionId, );
 
-        $this->assertCount(1, $results);
-        $result = $results[0];
-        $this->assertEquals(10, $result->id);
-        $this->assertEquals(50.0, $result->amount);
-        $this->assertEquals('SUCCESSFUL', $result->state->value);
+        $this->assertCount(1, $results, );
+        $result = $results->first();
+        $this->assertEquals(10, $result->id, );
+        $this->assertEquals(50.0, $result->amount, );
+        $this->assertEquals('SUCCESSFUL', $result->state->value, );
     }
 
     public function testFindByTransactionThrowsRefundExceptionOnError(): void

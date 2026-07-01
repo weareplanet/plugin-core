@@ -62,7 +62,7 @@ class DummySqlRepository implements PaymentMethodRepositoryInterface
             "[DB] INSERT INTO payment_methods (external_id, space_id, name) VALUES (%d, %d, '%s')\n",
             $method->id,
             $spaceId,
-            $method->name,
+            $method->title->getDefault(),
         );
     }
 
@@ -70,7 +70,7 @@ class DummySqlRepository implements PaymentMethodRepositoryInterface
     {
         echo sprintf(
             "[DB] UPDATE payment_methods SET name = '%s' WHERE external_id = %d AND space_id = %d\n",
-            $method->name,
+            $method->title->getDefault(),
             $method->id,
             $spaceId,
         );
@@ -108,7 +108,7 @@ try {
 
     echo sprintf("Found %d payment methods:\n", count($paymentMethods));
     foreach ($paymentMethods as $paymentMethod) {
-        echo sprintf("  - [ID: %d] %s (State: %s)\n", $paymentMethod->id, $paymentMethod->name, $paymentMethod->state->value);
+        echo sprintf("  - [ID: %d] %s (State: %s)\n", $paymentMethod->id, $paymentMethod->title->getDefault(), $paymentMethod->state->value);
     }
 } catch (\Exception $e) {
     exit("FAILED: " . $e->getMessage() . "\n");

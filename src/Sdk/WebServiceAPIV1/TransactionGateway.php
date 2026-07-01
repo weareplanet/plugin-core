@@ -6,17 +6,17 @@ namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV1;
 
 use WeArePlanet\PluginCore\Address\Address;
 use WeArePlanet\PluginCore\LineItem\LineItem;
-use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
-use WeArePlanet\PluginCore\PaymentMethod\PaymentMethod;
-use WeArePlanet\PluginCore\PaymentMethod\State as PaymentMethodState;
-use WeArePlanet\PluginCore\PaymentMethodConfiguration\PaymentMethodConfiguration;
+use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodCollection;
+use WeArePlanet\PluginCore\Sdk\PaymentMethodMapperTrait;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Sdk\TransactionMapperTrait;
 use WeArePlanet\PluginCore\Settings\IntegrationMode as IntegrationModeEnum;
 use WeArePlanet\PluginCore\Settings\Settings;
 use WeArePlanet\PluginCore\Tax\Tax;
+use WeArePlanet\PluginCore\Transaction\PaymentUrl;
 use WeArePlanet\PluginCore\Transaction\Transaction;
+use WeArePlanet\PluginCore\Transaction\TransactionCollection;
 use WeArePlanet\PluginCore\Transaction\TransactionContext;
 use WeArePlanet\PluginCore\Transaction\TransactionGatewayInterface;
 use WeArePlanet\PluginCore\Transaction\TransactionSearchCriteria;
@@ -31,7 +31,6 @@ use WeArePlanet\Sdk\Model\EntityQueryOrderBy as SdkEntityQueryOrderBy;
 use WeArePlanet\Sdk\Model\EntityQueryOrderByType as SdkEntityQueryOrderByType;
 use WeArePlanet\Sdk\Model\LineItemCreate as SdkLineItemCreate;
 use WeArePlanet\Sdk\Model\LineItemType as SdkLineItemType;
-use WeArePlanet\Sdk\Model\PaymentMethodConfiguration as SdkPaymentMethodConfiguration;
 use WeArePlanet\Sdk\Model\TaxCreate as SdkTaxCreate;
 use WeArePlanet\Sdk\Model\TransactionCreate as SdkTransactionCreate;
 use WeArePlanet\Sdk\Model\TransactionPending as SdkTransactionPending;
@@ -43,6 +42,7 @@ use WeArePlanet\Sdk\Service\TransactionService as SdkTransactionService;
 
 class TransactionGateway implements TransactionGatewayInterface
 {
+    use PaymentMethodMapperTrait;
     use TransactionMapperTrait;
 
     private SdkPaymentMethodConfigurationService $paymentMethodConfigService;
@@ -169,13 +169,20 @@ class TransactionGateway implements TransactionGatewayInterface
      */
     public function get(int $spaceId, int $transactionId): Transaction
     {
-        $this->logger->debug("Gateway: Reading transaction $transactionId from Space $spaceId.");
+        $this->logger->debug("Gateway: Reading transaction.", [
+            'transactionId' => $transactionId,
+            'spaceId' => $spaceId,
+        ]);
 
         try {
             $sdkTransaction = $this->transactionService->read($spaceId, $transactionId);
             $result = $this->mapToTransaction($sdkTransaction);
 
-            $this->logger->debug("Gateway: Transaction state is {$result->state->value}");
+            $this->logger->debug("Gateway: Transaction read.", [
+                'transactionId' => $transactionId,
+                'spaceId' => $spaceId,
+                'state' => $result->state->value,
+            ]);
 
             return $result;
         } catch (\Exception $e) {
@@ -189,24 +196,28 @@ class TransactionGateway implements TransactionGatewayInterface
      *
      * @param int $spaceId The space ID.
      * @param int $transactionId The transaction ID.
-     * @return PaymentMethod[] The available payment methods.
+     * @return PaymentMethodCollection The available payment methods.
      */
-    public function getAvailablePaymentMethods(int $spaceId, int $transactionId): array
+    public function getAvailablePaymentMethods(int $spaceId, int $transactionId): PaymentMethodCollection
     {
         $mode = $this->settings->getIntegrationMode()->value;
-        $this->logger->debug("Gateway: Fetching payment methods for mode $mode.");
+        $this->logger->debug("Gateway: Fetching payment methods.", [
+            'mode' => $mode,
+            'transactionId' => $transactionId,
+            'spaceId' => $spaceId,
+        ]);
 
         $sdkResults = $this->transactionService->fetchPaymentMethods($spaceId, $transactionId, $mode);
-        return array_map([$this, 'mapToPaymentMethod'], $sdkResults);
+        return new PaymentMethodCollection(...array_map([$this, 'mapToPaymentMethod'], $sdkResults));
     }
 
     /**
      * Gets all active payment method configurations.
      *
      * @param int $spaceId The space ID.
-     * @return PaymentMethod[] The payment method configurations.
+     * @return PaymentMethodCollection The payment method configurations.
      */
-    public function getPaymentMethodConfigurations(int $spaceId): array
+    public function getPaymentMethodConfigurations(int $spaceId): PaymentMethodCollection
     {
         $sdkEntityQuery = new SdkEntityQuery();
         $sdkEntityQueryFilter = new SdkEntityQueryFilter();
@@ -217,12 +228,15 @@ class TransactionGateway implements TransactionGatewayInterface
         $sdkEntityQuery->setFilter($sdkEntityQueryFilter);
 
         $results = $this->paymentMethodConfigService->search($spaceId, $sdkEntityQuery);
-        $this->logger->debug(sprintf("Gateway: Fetched %d payment method configurations.", count($results)));
+        $this->logger->debug("Gateway: Fetched payment method configurations.", [
+            'count' => count($results),
+            'spaceId' => $spaceId,
+        ]);
 
-        return array_map(
+        return new PaymentMethodCollection(...array_map(
             [$this, 'mapToPaymentMethod'],
             $results,
-        );
+        ));
     }
 
     /**
@@ -230,14 +244,18 @@ class TransactionGateway implements TransactionGatewayInterface
      *
      * @param int $spaceId The space ID.
      * @param int $transactionId The transaction ID.
-     * @return string The payment URL.
+     * @return PaymentUrl The payment URL value object.
      */
-    public function getPaymentUrl(int $spaceId, int $transactionId): string
+    public function getPaymentUrl(int $spaceId, int $transactionId): PaymentUrl
     {
         $mode = $this->settings->getIntegrationMode();
-        $this->logger->debug("Gateway: Fetching payment URL for mode {$mode->value}.");
+        $this->logger->debug("Gateway: Fetching payment URL.", [
+            'mode' => $mode->value,
+            'transactionId' => $transactionId,
+            'spaceId' => $spaceId,
+        ]);
 
-        return match ($mode) {
+        $url = match ($mode) {
             IntegrationModeEnum::PAYMENT_PAGE => $this->sdkProvider
                 ->getService(SdkTransactionPaymentPageService::class)
                 ->paymentPageUrl($spaceId, $transactionId),
@@ -250,6 +268,8 @@ class TransactionGateway implements TransactionGatewayInterface
                 ->getService(SdkTransactionLightboxService::class)
                 ->javascriptUrl($spaceId, $transactionId),
         };
+
+        return new PaymentUrl($url);
     }
 
     /**
@@ -327,31 +347,13 @@ class TransactionGateway implements TransactionGatewayInterface
         return $sdkTaxCreate;
     }
 
-    /**
-     * Maps an SDK PaymentMethodConfiguration to a domain object.
-     *
-     * @param SdkPaymentMethodConfiguration $sdkPaymentMethodConfiguration The SDK object.
-     * @return PaymentMethod The domain object.
-     */
-    private function mapToPaymentMethod(SdkPaymentMethodConfiguration $sdkPaymentMethodConfiguration): PaymentMethod
-    {
-        return new PaymentMethod(
-            id: (int) $sdkPaymentMethodConfiguration->getId(),
-            spaceId: (int) $sdkPaymentMethodConfiguration->getLinkedSpaceId(),
-            state: PaymentMethodState::from((string) $sdkPaymentMethodConfiguration->getState()),
-            title: new LocalizedString($sdkPaymentMethodConfiguration->getResolvedTitle() ?? $sdkPaymentMethodConfiguration->getName()),
-            description: new LocalizedString($sdkPaymentMethodConfiguration->getResolvedDescription() ?? $sdkPaymentMethodConfiguration->getDescription()),
-            sortOrder: (int) $sdkPaymentMethodConfiguration->getSortOrder(),
-            imageUrl: $sdkPaymentMethodConfiguration->getResolvedImageUrl(),
-        );
-    }
 
     /**
      * @inheritDoc
      */
-    public function search(int $spaceId, TransactionSearchCriteria $criteria): array
+    public function search(int $spaceId, TransactionSearchCriteria $criteria): TransactionCollection
     {
-        $this->logger->debug("Gateway: Searching transactions in Space $spaceId.");
+        $this->logger->debug("Gateway: Searching transactions.", ['spaceId' => $spaceId]);
 
         $query = new SdkEntityQuery();
 
@@ -394,7 +396,7 @@ class TransactionGateway implements TransactionGatewayInterface
 
         try {
             $results = $this->transactionService->search($spaceId, $query);
-            return array_map([$this, 'mapToTransaction'], $results);
+            return new TransactionCollection(...array_map([$this, 'mapToTransaction'], $results));
         } catch (\Exception $e) {
             $this->logger->error("Gateway: Failed to search transactions.", ['error' => $e->getMessage()]);
             throw $e;

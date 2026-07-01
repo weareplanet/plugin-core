@@ -6,6 +6,7 @@ namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV1;
 
 use WeArePlanet\PluginCore\Document\DocumentGatewayInterface;
 use WeArePlanet\PluginCore\Document\RenderedDocument;
+use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
@@ -91,7 +92,10 @@ class DocumentGateway implements DocumentGatewayInterface
                 // So I will stick with the search logic as it is more robust for "Invoice Service".
 
                 // If no invoice found, check if there is one in CANCELED state or just throw.
-                throw new TransactionException("No invoice found for transaction $transactionId");
+                throw new TransactionException(
+                    "No invoice found for transaction $transactionId in space $spaceId.",
+                    new LocalizedString('No invoice found for the transaction.'),
+                );
             }
 
             $invoice = $invoices[0];

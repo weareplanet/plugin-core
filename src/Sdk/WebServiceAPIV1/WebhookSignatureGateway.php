@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV1;
 
+use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Webhook\Exception\WebhookSignatureValidationException;
@@ -58,8 +59,7 @@ class WebhookSignatureGateway implements WebhookSignatureGatewayInterface
             );
             throw new WebhookSignatureValidationException(
                 "Webhook signature validation failed: " . $e->getMessage(),
-                null,
-                0,
+                new LocalizedString("Webhook signature validation failed."),
                 $e,
             );
         }

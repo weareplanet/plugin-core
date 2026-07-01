@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\Webhook;
 
 use WeArePlanet\PluginCore\Http\Request;
+use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Webhook\Enum\WebhookListener as WebhookListenerEnum;
 use WeArePlanet\PluginCore\Webhook\Exception\CommandException;
@@ -47,6 +48,9 @@ class WebhookProcessor
     {
         $context = null;
         $webhookListener = null;
+        $technicalName = null;
+        $entityId = null;
+        $spaceId = null;
 
         try {
             // Basic Payload Validation
@@ -77,13 +81,14 @@ class WebhookProcessor
                 // null means the transition is logically impossible (e.g. trying to go
                 // from PAID back to PENDING). We ignore these as "stale" or "impossible".
                 $this->logger->debug(
-                    sprintf(
-                        'State transition from "%s" to "%s" is not possible or already passed. Ignoring webhook for entity %s/%d.',
-                        $lastProcessedState,
-                        $remoteState,
-                        $technicalName,
-                        $entityId,
-                    ),
+                    'State transition is not possible or already passed; ignoring webhook.',
+                    [
+                        'fromState' => $lastProcessedState,
+                        'toState' => $remoteState,
+                        'technicalName' => $technicalName,
+                        'entityId' => $entityId,
+                        'spaceId' => $spaceId,
+                    ],
                 );
                 return;
             }
@@ -91,12 +96,23 @@ class WebhookProcessor
             // Duplicate Check
             // empty array means we are already at the target state.
             if (empty($transitionPath)) {
-                $this->logger->debug(sprintf('Webhook for entity %s/%d already processed. Ignoring duplicate.', $technicalName, $entityId));
+                $this->logger->debug('Webhook already processed; ignoring duplicate.', [
+                    'technicalName' => $technicalName,
+                    'entityId' => $entityId,
+                    'spaceId' => $spaceId,
+                ]);
                 return;
             }
 
             // Execution Loop
-            $this->logger->info(sprintf('Processing transition path for entity %s/%d from %s to %s: [%s]', $technicalName, $entityId, $lastProcessedState, $remoteState, implode(' -> ', $transitionPath)));
+            $this->logger->info('Processing transition path.', [
+                'technicalName' => $technicalName,
+                'entityId' => $entityId,
+                'fromState' => $lastProcessedState,
+                'toState' => $remoteState,
+                'transitionPath' => $transitionPath,
+                'spaceId' => $spaceId,
+            ]);
 
             $currentStateInLoop = $lastProcessedState;
 
@@ -109,7 +125,12 @@ class WebhookProcessor
                 if (!$shouldProceed) {
                     // This typically happens in high-concurrency environments where
                     // another thread processed the state between our fetch and our lock.
-                    $this->logger->debug(sprintf('Race condition: Step %s/%s already processed. Skipping.', $technicalName, $stateToProcess));
+                    $this->logger->debug('Race condition: step already processed; skipping.', [
+                        'technicalName' => $technicalName,
+                        'state' => $stateToProcess,
+                        'entityId' => $entityId,
+                        'spaceId' => $spaceId,
+                    ]);
 
                     // We MUST still call onFailure to release the locks acquired in preProcess()
                     // and roll back the (now empty) transaction.
@@ -123,12 +144,22 @@ class WebhookProcessor
 
                 if ($listener !== null) {
                     // Logic for this specific state transition.
-                    $this->logger->debug(sprintf('Processing step: %s/%s (Listener found)', $technicalName, $stateToProcess));
+                    $this->logger->debug('Processing step (listener found).', [
+                        'technicalName' => $technicalName,
+                        'state' => $stateToProcess,
+                        'entityId' => $entityId,
+                        'spaceId' => $spaceId,
+                    ]);
                     $command = $listener->getCommand($context);
                     $commandResult = $command->execute();
                 } else {
                     // Some states exist only for tracking and have no associated shop logic.
-                    $this->logger->debug(sprintf('Processing step: %s/%s (No listener registered, skipping command)', $technicalName, $stateToProcess));
+                    $this->logger->debug('Processing step (no listener registered, skipping command).', [
+                        'technicalName' => $technicalName,
+                        'state' => $stateToProcess,
+                        'entityId' => $entityId,
+                        'spaceId' => $spaceId,
+                    ]);
                 }
 
                 // Persist state change and release locks.
@@ -138,19 +169,23 @@ class WebhookProcessor
             }
 
         } catch (\InvalidArgumentException $e) {
-            $this->logger->warning('Webhook validation failed: ' . $e->getMessage());
+            $this->logger->warning('Webhook validation failed.', ['exception' => $e]);
         } catch (\Throwable $e) {
             // Global Failure Hook: Ensures that even if the business logic crashes,
             // we roll back the DB and release any distributed locks to prevent deadlocks.
             if ($context && $webhookListener) {
                 $this->lifecycleHandler->onFailure($webhookListener, $context, $e);
             }
-            $this->logger->error('Webhook processing failed: ' . $e->getMessage(), ['exception' => $e]);
+            $this->logger->error('Webhook processing failed.', ['exception' => $e]);
 
             // We re-throw as CommandException to signal the entry-point (Controller)
             // that it should return a 5xx error. This instructs the portal to
             // retry the webhook later, which is essential for transient failures (DB/Network).
-            throw new CommandException('Webhook command execution failed.', previous: $e);
+            throw new CommandException(
+                "Webhook command execution failed for entity {$entityId} with listener {$technicalName} under space {$spaceId}.",
+                new LocalizedString('Webhook command execution failed.'),
+                $e,
+            );
         }
     }
 }

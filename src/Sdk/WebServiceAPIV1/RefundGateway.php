@@ -8,6 +8,7 @@ use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Refund\Exception\RefundException;
 use WeArePlanet\PluginCore\Refund\Refund;
+use WeArePlanet\PluginCore\Refund\RefundCollection;
 use WeArePlanet\PluginCore\Refund\RefundContext;
 use WeArePlanet\PluginCore\Refund\RefundGatewayInterface;
 use WeArePlanet\PluginCore\Refund\State as StateEnum;
@@ -38,10 +39,7 @@ class RefundGateway implements RefundGatewayInterface
         $this->sdkRefundService = $this->sdkProvider->getService(SdkRefundService::class);
     }
 
-    /**
-     * @return Refund[]
-     */
-    public function findByTransaction(int $spaceId, int $transactionId): array
+    public function findByTransaction(int $spaceId, int $transactionId): RefundCollection
     {
         $query = new SdkEntityQuery();
         $filter = new SdkEntityQueryFilter();
@@ -57,7 +55,7 @@ class RefundGateway implements RefundGatewayInterface
             foreach ($sdkRefunds as $sdkRefund) {
                 $refunds[] = $this->mapToRefund($sdkRefund, $transactionId);
             }
-            return $refunds;
+            return new RefundCollection(...$refunds);
         } catch (\Throwable $e) {
             $this->logger->error(
                 'Failed to find refunds for transaction: {errorMessage}',
@@ -70,8 +68,7 @@ class RefundGateway implements RefundGatewayInterface
             );
             throw new RefundException(
                 "Failed to find refunds for transaction {$transactionId}: " . $e->getMessage(),
-                new LocalizedString($e->getMessage()),
-                0,
+                new LocalizedString('An error occurred while retrieving refunds.'),
                 $e,
             );
         }
@@ -108,7 +105,8 @@ class RefundGateway implements RefundGatewayInterface
 
     public function refund(int $spaceId, RefundContext $context): Refund
     {
-        $this->logger->debug("Preparing refund for Transaction {$context->transactionId}", [
+        $this->logger->debug("Preparing refund.", [
+            'transactionId' => $context->transactionId,
             'amount' => $context->amount,
             'spaceId' => $spaceId,
         ]);
@@ -134,7 +132,11 @@ class RefundGateway implements RefundGatewayInterface
                     $qty = (float)($item['quantity'] ?? 0);
                     $amt = (float)($item['amount'] ?? 0);
 
-                    $this->logger->debug("Adding Reduction: ID=$uniqueId, Qty=$qty, Amt=$amt");
+                    $this->logger->debug("Adding refund line item reduction.", [
+                        'uniqueId' => $uniqueId,
+                        'quantity' => $qty,
+                        'amount' => $amt,
+                    ]);
 
                     $sdkReduction = new SdkLineItemReductionCreate();
                     $sdkReduction->setLineItemUniqueId($uniqueId);
@@ -152,17 +154,23 @@ class RefundGateway implements RefundGatewayInterface
 
             $sdkRefund = $this->sdkRefundService->refund($spaceId, $sdkRefundCreate);
 
-            $this->logger->debug("Refund created successfully. ID: {$sdkRefund->getId()}, State: {$sdkRefund->getState()}");
+            $this->logger->debug("Refund created successfully.", [
+                'refundId' => $sdkRefund->getId(),
+                'state' => $sdkRefund->getState(),
+                'transactionId' => $context->transactionId,
+                'spaceId' => $spaceId,
+            ]);
 
             return $this->mapToRefund($sdkRefund, $context->transactionId);
         } catch (\Throwable $e) {
-            $this->logger->error("Refund failed for Transaction {$context->transactionId}: {$e->getMessage()}", [
-                'trace' => $e->getTraceAsString(),
+            $this->logger->error("Refund failed.", [
+                'transactionId' => $context->transactionId,
+                'spaceId' => $spaceId,
+                'exception' => $e,
             ]);
             throw new RefundException(
                 "Unable to process refund: {$e->getMessage()}",
-                new LocalizedString($e->getMessage()),
-                0,
+                new LocalizedString('An error occurred while processing the refund.'),
                 $e,
             );
         }

@@ -8,8 +8,10 @@ use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Webhook\Enum\WebhookListener as WebhookListenerEnum;
 use WeArePlanet\PluginCore\Webhook\WebhookListener;
+use WeArePlanet\PluginCore\Webhook\WebhookListenerCollection;
 use WeArePlanet\PluginCore\Webhook\WebhookManagementGatewayInterface;
 use WeArePlanet\PluginCore\Webhook\WebhookUrl;
+use WeArePlanet\PluginCore\Webhook\WebhookUrlCollection;
 use WeArePlanet\Sdk\Model\CreationEntityState as SdkCreationEntityState;
 use WeArePlanet\Sdk\Model\CriteriaOperator as SdkCriteriaOperator;
 use WeArePlanet\Sdk\Model\EntityQuery as SdkEntityQuery;
@@ -58,10 +60,15 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
      *
      * @inheritDoc
      */
-    public function createListener(int $spaceId, int $webhookUrlId, WebhookListenerEnum $entity, array $eventStates, string $name, bool $notifyEveryChange = false): int
+    public function createListener(int $spaceId, int $webhookUrlId, WebhookListenerEnum $entity, array $eventStates, string $name, bool $notifyEveryChange = false): WebhookListener
     {
-        $eventStatesList = implode(',', $eventStates);
-        $this->logger->debug("Creating Webhook Listener in space $spaceId for URL ID $webhookUrlId. Entity: {$entity->name}, States: $eventStatesList, Name: $name");
+        $this->logger->debug("Creating Webhook Listener.", [
+            'spaceId' => $spaceId,
+            'webhookUrlId' => $webhookUrlId,
+            'entity' => $entity->name,
+            'eventStates' => $eventStates,
+            'name' => $name,
+        ]);
 
         $listenerCreate = new SdkWebhookListenerCreate();
         $listenerCreate->setName($name);
@@ -74,24 +81,30 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
         $listenerCreate->setState(SdkCreationEntityState::ACTIVE);
         $listenerCreate->setNotifyEveryChange($notifyEveryChange);
 
+        // The SDK create call returns the fully hydrated listener entity.
         $result = $this->webhookListenerService->create($spaceId, $listenerCreate);
-        return (int)$result->getId();
+        return $this->mapToWebhookListener($result);
     }
 
     /**
      * @inheritDoc
      */
-    public function createUrl(int $spaceId, string $url, string $name): int
+    public function createUrl(int $spaceId, string $url, string $name): WebhookUrl
     {
-        $this->logger->debug("Creating Webhook URL config in space $spaceId: $name -> $url");
+        $this->logger->debug("Creating Webhook URL config.", [
+            'spaceId' => $spaceId,
+            'name' => $name,
+            'url' => $url,
+        ]);
 
         $entity = new SdkWebhookUrlCreate();
         $entity->setUrl($url);
         $entity->setName($name);
         $entity->setState(SdkCreationEntityState::ACTIVE);
 
+        // The SDK create call returns the fully hydrated URL entity.
         $result = $this->webhookUrlService->create($spaceId, $entity);
-        return (int)$result->getId();
+        return $this->mapToWebhookUrl($result);
     }
 
     /**
@@ -99,7 +112,10 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
      */
     public function deleteListener(int $spaceId, int $listenerId): void
     {
-        $this->logger->debug("Deleting Webhook Listener ID $listenerId in space $spaceId");
+        $this->logger->debug("Deleting Webhook Listener.", [
+            'listenerId' => $listenerId,
+            'spaceId' => $spaceId,
+        ]);
         $this->webhookListenerService->delete($spaceId, $listenerId);
     }
 
@@ -108,7 +124,10 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
      */
     public function deleteUrl(int $spaceId, int $webhookUrlId): void
     {
-        $this->logger->debug("Deleting Webhook URL ID $webhookUrlId in space $spaceId");
+        $this->logger->debug("Deleting Webhook URL.", [
+            'webhookUrlId' => $webhookUrlId,
+            'spaceId' => $spaceId,
+        ]);
         $this->webhookUrlService->delete($spaceId, $webhookUrlId);
     }
 
@@ -117,7 +136,10 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
      */
     public function getUrl(int $spaceId, int $webhookUrlId): WebhookUrl
     {
-        $this->logger->debug("Getting Webhook URL ID $webhookUrlId in space $spaceId");
+        $this->logger->debug("Getting Webhook URL.", [
+            'webhookUrlId' => $webhookUrlId,
+            'spaceId' => $spaceId,
+        ]);
 
         $sdkUrl = $this->webhookUrlService->read($spaceId, $webhookUrlId);
 
@@ -128,11 +150,14 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
      * Gets listeners filtered by URL ID, returning typed WebhookListener DTOs.
      *
      * @inheritDoc
-     * @return WebhookListener[]
+     * @return WebhookListenerCollection
      */
-    public function getWebhookListeners(int $spaceId, int $urlId): array
+    public function getWebhookListeners(int $spaceId, int $urlId): WebhookListenerCollection
     {
-        $this->logger->debug("Getting Webhook Listeners for URL ID $urlId in space $spaceId");
+        $this->logger->debug("Getting Webhook Listeners for URL.", [
+            'urlId' => $urlId,
+            'spaceId' => $spaceId,
+        ]);
 
         $query = new SdkEntityQuery();
 
@@ -147,16 +172,19 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
 
         $sdkListeners = $this->webhookListenerService->search($spaceId, $query);
 
-        return array_map([$this, 'mapToWebhookListener'], $sdkListeners);
+        return new WebhookListenerCollection(...array_map([$this, 'mapToWebhookListener'], $sdkListeners));
     }
 
     /**
      * @inheritDoc
-     * @return WebhookUrl[]
+     * @return WebhookUrlCollection
      */
-    public function getWebhookUrls(int $spaceId, ?string $state = 'ACTIVE'): array
+    public function getWebhookUrls(int $spaceId, ?string $state = 'ACTIVE'): WebhookUrlCollection
     {
-        $this->logger->debug(sprintf('Getting Webhook URLs in space %d with state filter: %s', $spaceId, $state ?? 'none'));
+        $this->logger->debug("Getting Webhook URLs.", [
+            'spaceId' => $spaceId,
+            'state' => $state,
+        ]);
 
         $query = new SdkEntityQuery();
         $orderBy = new SdkEntityQueryOrderBy();
@@ -175,18 +203,18 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
 
         $sdkUrls = $this->webhookUrlService->search($spaceId, $query);
 
-        return array_map([$this, 'mapToWebhookUrl'], $sdkUrls);
+        return new WebhookUrlCollection(...array_map([$this, 'mapToWebhookUrl'], $sdkUrls));
     }
 
     /**
      * Lists webhook listeners and maps each SDK object to a WebhookListener DTO.
      *
      * @inheritDoc
-     * @return WebhookListener[]
+     * @return WebhookListenerCollection
      */
-    public function listListeners(int $spaceId): array
+    public function listListeners(int $spaceId): WebhookListenerCollection
     {
-        $this->logger->debug("Listing Webhook Listeners in space $spaceId");
+        $this->logger->debug("Listing Webhook Listeners.", ['spaceId' => $spaceId]);
 
         $query = new SdkEntityQuery();
         $orderBy = new SdkEntityQueryOrderBy();
@@ -196,7 +224,7 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
 
         $sdkListeners = $this->webhookListenerService->search($spaceId, $query);
 
-        return array_map([$this, 'mapToWebhookListener'], $sdkListeners);
+        return new WebhookListenerCollection(...array_map([$this, 'mapToWebhookListener'], $sdkListeners));
     }
 
     /**
@@ -204,9 +232,9 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
      * By default, lists URLs in all states to preserve existing behavior.
      *
      * @inheritDoc
-     * @return WebhookUrl[]
+     * @return WebhookUrlCollection
      */
-    public function listUrls(int $spaceId): array
+    public function listUrls(int $spaceId): WebhookUrlCollection
     {
         return $this->getWebhookUrls($spaceId, null);
     }
@@ -256,10 +284,14 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
      *
      * @inheritDoc
      */
-    public function updateListener(int $spaceId, int $listenerId, WebhookListenerEnum $entity, array $eventStates): void
+    public function updateListener(int $spaceId, int $listenerId, WebhookListenerEnum $entity, array $eventStates): WebhookListener
     {
-        $eventStatesList = implode(',', $eventStates);
-        $this->logger->debug("Updating Webhook Listener ID $listenerId in space $spaceId. Entity: {$entity->name}, States: $eventStatesList");
+        $this->logger->debug("Updating Webhook Listener.", [
+            'listenerId' => $listenerId,
+            'spaceId' => $spaceId,
+            'entity' => $entity->name,
+            'eventStates' => $eventStates,
+        ]);
 
         // Read the existing listener to retrieve the current version for optimistic locking.
         $currentListener = $this->webhookListenerService->read($spaceId, $listenerId);
@@ -271,16 +303,22 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
         $update->setVersion($currentListener->getVersion());
         $update->setEntityStates($eventStates);
 
-        // Execute the update via the SDK service.
-        $this->webhookListenerService->update($spaceId, $update);
+        // Execute the update via the SDK service, which returns the updated entity.
+        $result = $this->webhookListenerService->update($spaceId, $update);
+
+        return $this->mapToWebhookListener($result);
     }
 
     /**
      * @inheritDoc
      */
-    public function updateUrl(int $spaceId, int $webhookUrlId, string $newUrl): void
+    public function updateUrl(int $spaceId, int $webhookUrlId, string $newUrl): WebhookUrl
     {
-        $this->logger->debug("Updating Webhook URL ID $webhookUrlId in space $spaceId to $newUrl");
+        $this->logger->debug("Updating Webhook URL.", [
+            'webhookUrlId' => $webhookUrlId,
+            'spaceId' => $spaceId,
+            'newUrl' => $newUrl,
+        ]);
 
         // Read the existing URL config to get the version for optimistic locking.
         $currentUrl = $this->webhookUrlService->read($spaceId, $webhookUrlId);
@@ -291,7 +329,9 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
         $update->setVersion($currentUrl->getVersion());
         $update->setUrl($newUrl);
 
-        // Execute the update operation via the SDK.
-        $this->webhookUrlService->update($spaceId, $update);
+        // Execute the update operation via the SDK, which returns the updated entity.
+        $result = $this->webhookUrlService->update($spaceId, $update);
+
+        return $this->mapToWebhookUrl($result);
     }
 }

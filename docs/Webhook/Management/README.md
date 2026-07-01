@@ -37,7 +37,9 @@ $config = new WebhookConfig(
     eventStates: [\WeArePlanet\PluginCore\Transaction\State::AUTHORIZED->value]
 );
 
-$webhookService->installWebhook($spaceId, $config);
+// installWebhook returns the created WebhookUrl, so you can reference it
+// (e.g. its id) without re-querying the space.
+$webhookUrl = $webhookService->installWebhook($spaceId, $config);
 ```
 
 ## Management Operations

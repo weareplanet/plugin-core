@@ -40,7 +40,7 @@ echo "Confirming Checkout for Transaction ID: $transactionId (Mode: Payment Page
 
 // Generate the payment URL.
 try {
-    $paymentUrl = $service->getPaymentUrl((int)$spaceId, $transactionId);
+    $paymentUrl = $service->getPaymentUrl((int)$spaceId, $transactionId)->value;
 
     echo "\n---------------------------------------------------\n";
     echo "CHECKOUT READY\n";

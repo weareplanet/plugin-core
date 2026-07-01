@@ -10,6 +10,7 @@ use WeArePlanet\PluginCore\LineItem\LineItem;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Refund\Exception\InvalidRefundException;
 use WeArePlanet\PluginCore\Refund\Refund;
+use WeArePlanet\PluginCore\Refund\RefundCollection;
 use WeArePlanet\PluginCore\Refund\RefundContext;
 use WeArePlanet\PluginCore\Refund\RefundGatewayInterface;
 use WeArePlanet\PluginCore\Refund\RefundService;
@@ -87,10 +88,10 @@ class RefundServiceTest extends TestCase
         $transaction = new Transaction();
         $transaction->lineItems = [$product, $discount, $freeGift];
 
-        $result = $this->service->getRefundableLineItems($transaction);
+        $result = $this->service->getRefundableLineItems($transaction, );
 
-        $this->assertCount(1, $result);
-        $this->assertSame($product, $result[0]);
+        $this->assertCount(1, $result, );
+        $this->assertSame($product, $result->first(), );
     }
     public function testListRefunds(): void
     {
@@ -106,17 +107,18 @@ class RefundServiceTest extends TestCase
         $refundB->amount = 20.00;
 
         $expectedRefunds = [$refundA, $refundB];
+        $expectedCollection = new RefundCollection(...$expectedRefunds, );
 
         $this->gateway->expects($this->once())
             ->method('findByTransaction')
-            ->with($spaceId, $transactionId)
-            ->willReturn($expectedRefunds);
+            ->with($spaceId, $transactionId, )
+            ->willReturn($expectedCollection);
 
-        $result = $this->service->getRefunds($spaceId, $transactionId);
+        $result = $this->service->getRefunds($spaceId, $transactionId, );
 
-        $this->assertCount(2, $result);
-        $this->assertSame($refundA, $result[0]);
-        $this->assertSame($refundB, $result[1]);
+        $this->assertCount(2, $result, );
+        $this->assertSame($refundA, $result->all()[0], );
+        $this->assertSame($refundB, $result->all()[1], );
     }
 
     public function testRefundFailsOnDiscountItem(): void
@@ -276,7 +278,7 @@ class RefundServiceTest extends TestCase
         );
 
         $this->expectException(InvalidRefundException::class);
-        $this->expectExceptionMessage("Refund amount exceeds the remaining authorized amount.");
+        $this->expectExceptionMessage("Refund amount 150 exceeds the remaining authorized amount 100 for transaction 123.");
 
         $this->service->createRefund($spaceId, $context);
     }
@@ -309,7 +311,7 @@ class RefundServiceTest extends TestCase
         );
 
         $this->expectException(InvalidRefundException::class);
-        $this->expectExceptionMessage("Refund amount 60.00 for item 'item-a' exceeds original item amount 50.00.");
+        $this->expectExceptionMessage("Refund amount 60.00 for item 'item-a' exceeds original item amount 50.00 in transaction 123.");
 
         $this->service->createRefund($spaceId, $context);
     }
@@ -343,7 +345,7 @@ class RefundServiceTest extends TestCase
         );
 
         $this->expectException(InvalidRefundException::class);
-        $this->expectExceptionMessage("Consistency Error: Total provided refund amount (60.00) does not match the sum of line item reductions (50.00).");
+        $this->expectExceptionMessage("Consistency Error: Total provided refund amount (60.00) does not match the sum of line item reductions (50.00) for transaction 123.");
 
         $this->service->createRefund($spaceId, $context);
     }

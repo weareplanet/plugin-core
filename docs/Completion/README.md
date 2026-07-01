@@ -30,10 +30,10 @@ The `TransactionCompletionService` requires the `TransactionCompletionGatewayInt
 use WeArePlanet\PluginCore\Transaction\Completion\TransactionCompletionService;
 use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TransactionCompletionGateway;
 
-// 1. Setup Gateways
+// Setup Gateways
 $completionGateway = new TransactionCompletionGateway($sdkProvider);
 
-// 2. Setup Service
+// Setup Service
 $completionService = new TransactionCompletionService(
     $completionGateway,
     $logger
@@ -50,10 +50,17 @@ Typically triggered from a "Shipment" or "Capture" action in your shop's backend
 
 ```php
 try {
-    // Perform the capture
+    // Perform the capture; returns a TransactionCompletion domain object
     $completion = $completionService->capture($spaceId, $transactionId);
 
-    echo "Capture successful! Completion ID: " . $completion->id;
+    // No exception does not imply success: the completion may come back
+    // FAILED or still PENDING/SCHEDULED. Always inspect the state.
+    echo "Capture complete! ID: " . $completion->id . ", State: " . $completion->state->value;
+
+    // If the gateway reported a failure reason, localize it for the shop locale
+    if ($completion->failureReason !== null) {
+        echo "Failure reason: " . $completion->failureReason->localize('en-US');
+    }
 } catch (TransactionException $e) {
     // Handle specific capture errors (e.g., transaction not in AUTHORIZED state)
     $logger->error("Capture failed: " . $e->getMessage());

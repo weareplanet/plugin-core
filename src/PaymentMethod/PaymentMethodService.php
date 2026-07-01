@@ -36,7 +36,11 @@ class PaymentMethodService
         try {
             return $this->gateway->fetchById($spaceId, $paymentMethodId);
         } catch (\Exception $e) {
-            $this->logger->error(sprintf('Error fetching payment method %d for space %d: %s', $paymentMethodId, $spaceId, $e->getMessage()));
+            $this->logger->error('Error fetching payment method.', [
+                'paymentMethodId' => $paymentMethodId,
+                'spaceId' => $spaceId,
+                'exception' => $e,
+            ]);
             throw $e;
         }
     }
@@ -46,17 +50,23 @@ class PaymentMethodService
      *
      * @param int $spaceId The ID of the space.
      * @param string|null $state The optional state to filter by.
-     * @return PaymentMethod[] The list of available payment methods.
+     * @return PaymentMethodCollection The list of available payment methods.
      */
-    public function getPaymentMethods(int $spaceId, ?string $state = null): array
+    public function getPaymentMethods(int $spaceId, ?string $state = null): PaymentMethodCollection
     {
         try {
             $methods = $this->gateway->fetchBySpaceId($spaceId, $state);
-            $this->logger->info(sprintf('Fetched %d payment methods for space %d.', count($methods), $spaceId));
+            $this->logger->info('Fetched payment methods.', [
+                'count' => count($methods),
+                'spaceId' => $spaceId,
+            ]);
 
             return $methods;
         } catch (\Exception $e) {
-            $this->logger->error(sprintf('Error fetching payment methods for space %d: %s', $spaceId, $e->getMessage()));
+            $this->logger->error('Error fetching payment methods.', [
+                'spaceId' => $spaceId,
+                'exception' => $e,
+            ]);
 
             throw $e;
         }
@@ -74,17 +84,23 @@ class PaymentMethodService
      */
     public function synchronize(int $spaceId): void
     {
-        $this->logger->debug(sprintf('Starting payment method synchronization for space %d.', $spaceId));
+        $this->logger->debug('Starting payment method synchronization.', ['spaceId' => $spaceId]);
 
         // Fetch the current state from the API.
         $externalMethods = $this->gateway->fetchBySpaceId($spaceId);
-        $this->logger->debug(sprintf('Fetched %d payment methods from the API for space %d.', count($externalMethods), $spaceId));
+        $this->logger->debug('Fetched payment methods from the API.', [
+            'count' => count($externalMethods),
+            'spaceId' => $spaceId,
+        ]);
 
         // Fetch the IDs of methods already persisted in the shop's local database.
         // We support both a simple list of IDs [id1, id2] and an associative map [id => signature].
         /** @var array<int, int|string> $existingData */
         $existingData = $this->repository->getExistingExternalIds($spaceId);
-        $this->logger->debug(sprintf('Found %d existing payment method records in the local database for space %d.', count($existingData), $spaceId));
+        $this->logger->debug('Found existing payment method records in the local database.', [
+            'count' => count($existingData),
+            'spaceId' => $spaceId,
+        ]);
 
         // Detect if the repository provided signatures for smart comparison.
         $hasSignatures = !empty($existingData) && \is_string(\reset($existingData)) && \is_int(\key($existingData));
@@ -124,13 +140,12 @@ class PaymentMethodService
             $this->repository->deactivateByExternalId($orphanedId, $spaceId);
         }
 
-        $this->logger->info(sprintf(
-            'Payment method sync completed for space %d: %d created, %d updated (%d skipped), %d deactivated.',
-            $spaceId,
-            $createdCount,
-            $updatedCount,
-            $skippedCount,
-            count($orphanedIds),
-        ));
+        $this->logger->info('Payment method sync completed.', [
+            'spaceId' => $spaceId,
+            'created' => $createdCount,
+            'updated' => $updatedCount,
+            'skipped' => $skippedCount,
+            'deactivated' => count($orphanedIds),
+        ]);
     }
 }

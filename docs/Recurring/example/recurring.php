@@ -82,7 +82,7 @@ try {
     echo "---------------------------------------------------\n";
     echo "TOKEN CREATION FAILED\n";
     echo "---------------------------------------------------\n";
-    echo "Reason: " . ($e->getLocalizedReason()?->localize('en-US') ?? $e->getMessage()) . "\n";
+    echo "Reason: " . ($e->getLocalizedMessage()?->localize('en-US') ?? $e->getMessage()) . "\n";
     echo "---------------------------------------------------\n";
     exit(1);
 } catch (\Throwable $e) {

@@ -211,7 +211,7 @@ class DefaultStateFetcherTest extends TestCase
     {
         // --- Assert ---
         $this->expectException(\Exception::class, );
-        $this->expectExceptionMessage('Invalid webhook signature.', );
+        $this->expectExceptionMessage('Invalid webhook signature: validation check failed.', );
 
         // --- Arrange ---
         $request = $this->createRequest(
@@ -232,8 +232,8 @@ class DefaultStateFetcherTest extends TestCase
     public function testFetchStateThrowsExceptionWhenTechnicalNameIsUnsupported(): void
     {
         // --- Assert ---
-        $this->expectException(\Exception::class, );
-        $this->expectExceptionMessage('Legacy state fetching not supported for entity: UnsupportedEntity', );
+        $this->expectException(\Exception::class);
+        $this->expectExceptionMessage('Legacy state fetching not supported for entity: UnsupportedEntity');
 
         // --- Arrange ---
         $request = $this->createRequest(

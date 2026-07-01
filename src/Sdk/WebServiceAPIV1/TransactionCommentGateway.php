@@ -10,6 +10,7 @@ use WeArePlanet\PluginCore\Sdk\DateTimeMapperTrait;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Transaction\Exception\TransactionCommentException;
 use WeArePlanet\PluginCore\Transaction\TransactionComment;
+use WeArePlanet\PluginCore\Transaction\TransactionCommentCollection;
 use WeArePlanet\PluginCore\Transaction\TransactionCommentGatewayInterface;
 use WeArePlanet\Sdk\Model\TransactionComment as SdkTransactionComment;
 use WeArePlanet\Sdk\Service\TransactionCommentService as SdkTransactionCommentService;
@@ -42,7 +43,7 @@ class TransactionCommentGateway implements TransactionCommentGatewayInterface
     /**
      * @inheritDoc
      */
-    public function getComments(int $spaceId, int $transactionId): array
+    public function getComments(int $spaceId, int $transactionId): TransactionCommentCollection
     {
         try {
             $this->logger->debug(
@@ -54,7 +55,7 @@ class TransactionCommentGateway implements TransactionCommentGatewayInterface
             );
             $sdkComments = $this->service->all($spaceId, $transactionId);
 
-            return array_map([$this, 'mapToTransactionComment'], $sdkComments);
+            return new TransactionCommentCollection(...array_map([$this, 'mapToTransactionComment'], $sdkComments));
         } catch (\Exception $e) {
             $this->logger->error(
                 'Failed to fetch transaction comments: {errorMessage}',
@@ -67,8 +68,7 @@ class TransactionCommentGateway implements TransactionCommentGatewayInterface
             );
             throw new TransactionCommentException(
                 "Failed to fetch comments for transaction {$transactionId}: " . $e->getMessage(),
-                new LocalizedString($e->getMessage()),
-                0,
+                new LocalizedString('An error occurred while fetching transaction comments.'),
                 $e,
             );
         }

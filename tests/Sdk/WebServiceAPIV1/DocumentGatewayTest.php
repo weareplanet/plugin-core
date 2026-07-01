@@ -76,7 +76,7 @@ class DocumentGatewayTest extends TestCase
     public function testGetInvoiceThrowsExceptionIfNotFound(): void
     {
         $this->expectException(\Exception::class);
-        $this->expectExceptionMessage("No invoice found for transaction 2");
+        $this->expectExceptionMessage("No invoice found for transaction 2 in space 1.");
 
         $this->invoiceService->expects($this->once())
             ->method('search')

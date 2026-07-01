@@ -40,15 +40,15 @@ echo "Confirming Checkout for Transaction ID: $transactionId (Mode: Custom UI / 
 
 try {
     $mode = 'iframe';
-    $paymentMethods = $gateway->getAvailablePaymentMethods((int)$spaceId, $transactionId);
-    if (empty($paymentMethods)) {
+    $paymentMethods = $gateway->getAvailablePaymentMethods((int)$spaceId, $transactionId,);
+    if ($paymentMethods->isEmpty()) {
         exit("\n[ERROR] No payment methods available for this transaction.\n");
     }
 
-    $method = reset($paymentMethods);
-    echo "Selected Payment Method: " . $method->name . " (ID: " . $method->id . ")\n";
+    $method = $paymentMethods->first();
+    echo "Selected Payment Method: " . $method->title->getDefault() . " (ID: " . $method->id . ")\n";
 
-    $javascriptUrl = $service->getPaymentUrl((int)$spaceId, $transactionId);
+    $javascriptUrl = $service->getPaymentUrl((int)$spaceId, $transactionId)->value;
 
     // Get the raw metadata. This is useful for reactive frameworks (Vue, React, Alpine.js)
     // that might want to store these values in their state.

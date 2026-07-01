@@ -137,28 +137,28 @@ class TransactionGatewayTest extends TestCase
         $spaceId = 123;
         $transactionId = 999;
 
-        // 1. Simulate Setting = IFRAME
+        // Simulate Setting = IFRAME
         $this->settings->method('getIntegrationMode')
             ->willReturn(IntegrationMode::IFRAME);
 
-        // 2. Mock SDK Response
+        // Mock SDK Response
         $sdkItem = new SdkConfiguration();
         $sdkItem->setId(55);
         $sdkItem->setLinkedSpaceId($spaceId);
         $sdkItem->setState(\WeArePlanet\Sdk\Model\CreationEntityState::ACTIVE);
         $sdkItem->setResolvedTitle(['en-US' => 'Invoice']);
 
-        // 3. Expect Gateway to pass 'iframe' string to SDK
+        // Expect Gateway to pass 'iframe' string to SDK
         $this->sdkTransactionService->expects($this->once())
             ->method('fetchPaymentMethods')
             ->with($spaceId, $transactionId, 'iframe')
             ->willReturn([$sdkItem]);
 
-        // 4. Run
-        $results = $this->gateway->getAvailablePaymentMethods($spaceId, $transactionId);
+        // Run
+        $results = $this->gateway->getAvailablePaymentMethods($spaceId, $transactionId, );
 
-        $this->assertCount(1, $results);
-        $this->assertEquals(55, $results[0]->id);
+        $this->assertCount(1, $results, );
+        $this->assertEquals(55, $results->first()->id, );
     }
 
     public function testFetchPaymentMethodConfigurationsMapsCorrectly(): void
@@ -178,10 +178,10 @@ class TransactionGatewayTest extends TestCase
             ->method('search')
             ->willReturn([$sdkItem1]);
 
-        $results = $this->gateway->getPaymentMethodConfigurations($spaceId);
+        $results = $this->gateway->getPaymentMethodConfigurations($spaceId, );
 
-        $this->assertCount(1, $results);
-        $this->assertEquals(10, $results[0]->id);
+        $this->assertCount(1, $results, );
+        $this->assertEquals(10, $results->first()->id, );
     }
 
     #[DataProvider('integrationModeProvider')]
@@ -194,10 +194,10 @@ class TransactionGatewayTest extends TestCase
         $txId = 2;
         $expectedUrl = 'https://weareplanet.com/pay';
 
-        // 1. Configure Settings
+        // Configure Settings
         $this->settings->method('getIntegrationMode')->willReturn($mode);
 
-        // 2. Mock the specific service
+        // Mock the specific service
         /** @var class-string $serviceClass */
         $specificServiceMock = $this->createMock($serviceClass);
         $specificServiceMock->expects($this->once())
@@ -205,7 +205,7 @@ class TransactionGatewayTest extends TestCase
             ->with($spaceId, $txId)
             ->willReturn($expectedUrl);
 
-        // 3. RE-CREATE Provider Mock for this specific test
+        // RE-CREATE Provider Mock for this specific test
         $cleanSdkProvider = $this->createMock(SdkProvider::class);
         $cleanSdkProvider->method('getService')
             ->willReturnMap([
@@ -214,14 +214,14 @@ class TransactionGatewayTest extends TestCase
                 [$serviceClass, $specificServiceMock],
             ]);
 
-        // 4. RE-CREATE Gateway with clean provider
+        // RE-CREATE Gateway with clean provider
         $cleanGateway = new TransactionGateway(
             $cleanSdkProvider,
             $this->logger,
             $this->settings,
         );
 
-        // 5. Run Test
+        // Run Test
         $url = $cleanGateway->getPaymentUrl($spaceId, $txId);
 
         $this->assertEquals($expectedUrl, $url);

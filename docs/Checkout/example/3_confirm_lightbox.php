@@ -46,17 +46,16 @@ try {
     $mode = 'lightbox';
 
     // Fetch Available Methods
-    $paymentMethods = $gateway->getAvailablePaymentMethods((int)$spaceId, $transactionId);
-    if (empty($paymentMethods)) {
+    $paymentMethods = $gateway->getAvailablePaymentMethods((int)$spaceId, $transactionId,);
+    if ($paymentMethods->isEmpty()) {
         exit("\n[ERROR] No payment methods available for this transaction.\n");
     }
 
-    // Pick the first one
-    $method = reset($paymentMethods);
-    echo "Selected Payment Method: " . $method->name . " (ID: " . $method->id . ")\n";
+    $method = $paymentMethods->first();
+    echo "Selected Payment Method: " . $method->title->getDefault() . " (ID: " . $method->id . ")\n";
 
     // Get JS URL
-    $javascriptUrl = $service->getPaymentUrl((int)$spaceId, $transactionId);
+    $javascriptUrl = $service->getPaymentUrl((int)$spaceId, $transactionId)->value;
 
     // Render HTML Block
     // The rendered block registers the handler in window.__weareplanetHandlers[configId],

@@ -47,15 +47,15 @@ try {
 
     // Generate the simulation HTML.
     // We pick the first available payment method and generate the payment URL.
-    $paymentMethods = $gateway->getAvailablePaymentMethods((int)$spaceId, $transactionId);
-    if (empty($paymentMethods)) {
+    $paymentMethods = $gateway->getAvailablePaymentMethods((int)$spaceId, $transactionId,);
+    if ($paymentMethods->isEmpty()) {
         exit("\n[ERROR] No payment methods available for this transaction.\n");
     }
 
-    $method = reset($paymentMethods);
-    echo "Selected Payment Method: " . $method->name . " (ID: " . $method->id . ")\n";
+    $method = $paymentMethods->first();
+    echo "Selected Payment Method: " . $method->title->getDefault() . " (ID: " . $method->id . ")\n";
 
-    $javascriptUrl = $service->getPaymentUrl((int)$spaceId, $transactionId);
+    $javascriptUrl = $service->getPaymentUrl((int)$spaceId, $transactionId)->value;
     // The rendered block registers the handler in window.__weareplanetHandlers[configId],
     // so frontend frameworks (e.g. Alpine.js) can access handler.validate() and handler.submit()
     // from outside the inline script.

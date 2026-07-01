@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Webhook;
 
+use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Webhook\Enum\WebhookListener as WebhookListenerEnum;
+use WeArePlanet\PluginCore\Webhook\Exception\CommandException;
 use WeArePlanet\PluginCore\Webhook\Listener\WebhookListenerRegistry;
 
 /**
@@ -37,13 +39,16 @@ class WebhookService
      * @param WebhookListenerEnum $entity
      * @param array<string> $eventStates
      * @param string $name
-     * @return int
+     * @return WebhookListener
      */
-    public function createWebhookListener(int $spaceId, int $urlId, WebhookListenerEnum $entity, array $eventStates, string $name, bool $notifyEveryChange = false): int
+    public function createWebhookListener(int $spaceId, int $urlId, WebhookListenerEnum $entity, array $eventStates, string $name, bool $notifyEveryChange = false): WebhookListener
     {
-        $listenerId = $this->managementGateway->createListener($spaceId, $urlId, $entity, $eventStates, $name, $notifyEveryChange);
-        $this->logger->debug("Created Webhook Listener ID: $listenerId");
-        return $listenerId;
+        $listener = $this->managementGateway->createListener($spaceId, $urlId, $entity, $eventStates, $name, $notifyEveryChange);
+        $this->logger->debug("Created Webhook Listener.", [
+            'listenerId' => $listener->id,
+            'spaceId' => $spaceId,
+        ]);
+        return $listener;
     }
 
     /**
@@ -52,13 +57,16 @@ class WebhookService
      * @param int $spaceId
      * @param string $url
      * @param string $name
-     * @return int
+     * @return WebhookUrl
      */
-    public function createWebhookUrl(int $spaceId, string $url, string $name): int
+    public function createWebhookUrl(int $spaceId, string $url, string $name): WebhookUrl
     {
-        $urlId = $this->managementGateway->createUrl($spaceId, $url, $name);
-        $this->logger->debug("Created Webhook URL ID: $urlId");
-        return $urlId;
+        $webhookUrl = $this->managementGateway->createUrl($spaceId, $url, $name);
+        $this->logger->debug("Created Webhook URL.", [
+            'urlId' => $webhookUrl->id,
+            'spaceId' => $spaceId,
+        ]);
+        return $webhookUrl;
     }
 
     /**
@@ -82,7 +90,10 @@ class WebhookService
      */
     public function deleteWebhookListenersForUrl(int $spaceId, int $webhookUrlId): int
     {
-        $this->logger->debug("Deleting listeners for Webhook URL $webhookUrlId in Space $spaceId.");
+        $this->logger->debug("Deleting listeners for Webhook URL.", [
+            'webhookUrlId' => $webhookUrlId,
+            'spaceId' => $spaceId,
+        ]);
 
         $listeners = $this->getWebhookListeners($spaceId, $webhookUrlId);
         $count = 0;
@@ -107,8 +118,11 @@ class WebhookService
      */
     public function deleteWebhookUrl(int $spaceId, int $webhookUrlId, bool $cascade = false): int
     {
-        $cascadeText = $cascade ? 'true' : 'false';
-        $this->logger->debug("Deleting Webhook URL $webhookUrlId in Space $spaceId (Cascade: $cascadeText).");
+        $this->logger->debug("Deleting Webhook URL.", [
+            'webhookUrlId' => $webhookUrlId,
+            'spaceId' => $spaceId,
+            'cascade' => $cascade,
+        ]);
 
         $deletedCount = 0;
         if ($cascade) {
@@ -124,10 +138,10 @@ class WebhookService
      * Finds an existing listener for the given entity in the provided list.
      *
      * @param WebhookListenerEnum $entity
-     * @param WebhookListener[] $listeners
+     * @param WebhookListenerCollection $listeners
      * @return WebhookListener|null
      */
-    private function findListenerForEntity(WebhookListenerEnum $entity, array $listeners): ?WebhookListener
+    private function findListenerForEntity(WebhookListenerEnum $entity, WebhookListenerCollection $listeners): ?WebhookListener
     {
         foreach ($listeners as $listener) {
             if ($listener->entityId === $entity->value) {
@@ -153,7 +167,7 @@ class WebhookService
             }
         }
 
-        return $this->createWebhookUrl($spaceId, $url, $name);
+        return $this->createWebhookUrl($spaceId, $url, $name)->id;
     }
 
     /**
@@ -161,9 +175,9 @@ class WebhookService
      *
      * @param int $spaceId
      * @param int $urlId
-     * @return WebhookListener[]
+     * @return WebhookListenerCollection
      */
-    public function getWebhookListeners(int $spaceId, int $urlId): array
+    public function getWebhookListeners(int $spaceId, int $urlId): WebhookListenerCollection
     {
         return $this->managementGateway->getWebhookListeners($spaceId, $urlId);
     }
@@ -173,9 +187,9 @@ class WebhookService
      *
      * @param int $spaceId
      * @param string|null $state
-     * @return WebhookUrl[]
+     * @return WebhookUrlCollection
      */
-    public function getWebhookUrls(int $spaceId, ?string $state = 'ACTIVE'): array
+    public function getWebhookUrls(int $spaceId, ?string $state = 'ACTIVE'): WebhookUrlCollection
     {
         return $this->managementGateway->getWebhookUrls($spaceId, $state);
     }
@@ -185,23 +199,29 @@ class WebhookService
      *
      * @param int $spaceId
      * @param WebhookConfig $config
-     * @return void
+     * @return WebhookUrl The created webhook URL, so callers can reference it without re-querying.
      */
-    public function installWebhook(int $spaceId, WebhookConfig $config): void
+    public function installWebhook(int $spaceId, WebhookConfig $config): WebhookUrl
     {
-        $this->logger->debug("Installing Webhook '{$config->name}' for Entity {$config->entity->name} in Space $spaceId.");
+        $this->logger->debug("Installing Webhook.", [
+            'name' => $config->name,
+            'entity' => $config->entity->name,
+            'spaceId' => $spaceId,
+        ]);
 
-        $urlId = $this->createWebhookUrl($spaceId, $config->url, $config->name);
-        $this->createWebhookListener($spaceId, $urlId, $config->entity, $config->eventStates, $config->name);
+        $webhookUrl = $this->createWebhookUrl($spaceId, $config->url, $config->name);
+        $this->createWebhookListener($spaceId, $webhookUrl->id, $config->entity, $config->eventStates, $config->name);
+
+        return $webhookUrl;
     }
 
     /**
      * Lists all webhook listeners in the space.
      *
      * @param int $spaceId
-     * @return WebhookListener[]
+     * @return WebhookListenerCollection
      */
-    public function listListeners(int $spaceId): array
+    public function listListeners(int $spaceId): WebhookListenerCollection
     {
         return $this->managementGateway->listListeners($spaceId);
     }
@@ -210,9 +230,9 @@ class WebhookService
      * Lists all webhook URL definitions in the space.
      *
      * @param int $spaceId
-     * @return WebhookUrl[]
+     * @return WebhookUrlCollection
      */
-    public function listUrls(int $spaceId): array
+    public function listUrls(int $spaceId): WebhookUrlCollection
     {
         return $this->getWebhookUrls($spaceId, null);
     }
@@ -238,7 +258,10 @@ class WebhookService
         WebhookListenerRegistry $registry,
         bool $force = false,
     ): void {
-        $this->logger->debug("Synchronizing webhooks for Space $spaceId at URL $url.");
+        $this->logger->debug("Synchronizing webhooks.", [
+            'spaceId' => $spaceId,
+            'url' => $url,
+        ]);
 
         $urlId = $this->getOrCreateWebhookUrl($spaceId, $url, $namePrefix);
         $existingListeners = $this->getWebhookListeners($spaceId, $urlId);
@@ -276,18 +299,35 @@ class WebhookService
      */
     public function uninstallWebhook(int $spaceId, int $webhookUrlId, int $listenerId): void
     {
-        $this->logger->debug("Uninstalling Webhook (URL: $webhookUrlId, Listener: $listenerId) in Space $spaceId.");
+        $this->logger->debug("Uninstalling Webhook.", [
+            'webhookUrlId' => $webhookUrlId,
+            'listenerId' => $listenerId,
+            'spaceId' => $spaceId,
+        ]);
 
         try {
             $this->deleteWebhookListener($spaceId, $listenerId);
         } catch (\Throwable $e) {
-            $this->logger->error("Failed to delete Webhook Listener $listenerId: {$e->getMessage()}");
+            $this->logger->error("Failed to delete Webhook Listener.", [
+                'listenerId' => $listenerId,
+                'spaceId' => $spaceId,
+                'exception' => $e,
+            ]);
+            throw new CommandException(
+                "Failed to delete Webhook Listener {$listenerId} in space {$spaceId}.",
+                new LocalizedString('Failed to uninstall webhook listener.'),
+                $e,
+            );
         }
 
         try {
             $this->deleteWebhookUrl($spaceId, $webhookUrlId);
         } catch (\Throwable $e) {
-            $this->logger->error("Failed to delete Webhook URL $webhookUrlId: {$e->getMessage()}");
+            $this->logger->error("Failed to delete Webhook URL.", [
+                'webhookUrlId' => $webhookUrlId,
+                'spaceId' => $spaceId,
+                'exception' => $e,
+            ]);
             throw $e;
         }
 
@@ -301,13 +341,18 @@ class WebhookService
      * @param int $listenerId
      * @param WebhookListenerEnum $entity
      * @param array<string> $eventStates
-     * @return void
+     * @return WebhookListener The updated webhook listener.
      */
-    public function updateWebhookListener(int $spaceId, int $listenerId, WebhookListenerEnum $entity, array $eventStates): void
+    public function updateWebhookListener(int $spaceId, int $listenerId, WebhookListenerEnum $entity, array $eventStates): WebhookListener
     {
-        $this->logger->debug("Updating Webhook Listener $listenerId in Space $spaceId.");
-        $this->managementGateway->updateListener($spaceId, $listenerId, $entity, $eventStates);
+        $this->logger->debug("Updating Webhook Listener.", [
+            'listenerId' => $listenerId,
+            'spaceId' => $spaceId,
+        ]);
+        $updatedListener = $this->managementGateway->updateListener($spaceId, $listenerId, $entity, $eventStates);
         $this->logger->debug("Webhook Listener updated successfully.");
+
+        return $updatedListener;
     }
 
     /**
@@ -316,13 +361,19 @@ class WebhookService
      * @param int $spaceId
      * @param int $webhookUrlId
      * @param string $newUrl
-     * @return void
+     * @return WebhookUrl The updated webhook URL definition.
      */
-    public function updateWebhookUrl(int $spaceId, int $webhookUrlId, string $newUrl): void
+    public function updateWebhookUrl(int $spaceId, int $webhookUrlId, string $newUrl): WebhookUrl
     {
-        $this->logger->debug("Updating Webhook URL $webhookUrlId in Space $spaceId.");
-        $this->managementGateway->updateUrl($spaceId, $webhookUrlId, $newUrl);
+        $this->logger->debug("Updating Webhook URL.", [
+            'webhookUrlId' => $webhookUrlId,
+            'spaceId' => $spaceId,
+            'newUrl' => $newUrl,
+        ]);
+        $updatedUrl = $this->managementGateway->updateUrl($spaceId, $webhookUrlId, $newUrl);
         $this->logger->debug("Webhook URL updated successfully.");
+
+        return $updatedUrl;
     }
 
     /**

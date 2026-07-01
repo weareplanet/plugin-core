@@ -37,7 +37,7 @@ class LineItemConsistencyServiceTest extends TestCase
         $logger->expects($this->once())
             ->method('warning')
             ->with(
-                $this->stringContains("Line item discrepancy of 0.01 detected (Expected: 10.00, Calculated: 9.99). Line item consistency enforcement is DISABLED. Proceeding with mismatched totals. The WeArePlanet API will likely reject this request or hide payment methods."),
+                $this->stringContains("Line item discrepancy detected but consistency enforcement is DISABLED."),
                 [
                     'expectedAmount' => 10.00,
                     'calculatedAmount' => 9.99,
@@ -86,7 +86,8 @@ class LineItemConsistencyServiceTest extends TestCase
         $result = $service->ensureConsistency([$item], 10.00, 'CHF');
 
         $this->assertCount(2, $result);
-        $adjustment = end($result);
+        $items = $result->all();
+        $adjustment = end($items);
         $this->assertEquals(-0.02, $adjustment->amountIncludingTax);
     }
     public function testPerfectMatchNeedsNoAdjustment(): void
@@ -119,8 +120,8 @@ class LineItemConsistencyServiceTest extends TestCase
 
         $result = $service->sanitizeNegativeLineItems([$item1, $item2]);
 
-        $this->assertEquals(100.00, $result[0]->amountIncludingTax);
-        $this->assertEquals(-100.00, $result[1]->amountIncludingTax); // Adjusted to -100
+        $this->assertEquals(100.00, $result->all()[0]->amountIncludingTax, );
+        $this->assertEquals(-100.00, $result->all()[1]->amountIncludingTax, ); // Adjusted to -100
     }
 
     public function testSanitizeNegativeLineItemsAdjustsMultipleDiscounts(): void
@@ -141,11 +142,11 @@ class LineItemConsistencyServiceTest extends TestCase
 
         $result = $service->sanitizeNegativeLineItems([$item1, $item2, $item3]);
 
-        $this->assertEquals(100.00, $result[0]->amountIncludingTax);
+        $this->assertEquals(100.00, $result->all()[0]->amountIncludingTax, );
         // Factor = (-200 - (-100)) / -200 = -100 / -200 = 0.5
         // New amounts = -100 * 0.5 = -50
-        $this->assertEquals(-50.00, $result[1]->amountIncludingTax);
-        $this->assertEquals(-50.00, $result[2]->amountIncludingTax);
+        $this->assertEquals(-50.00, $result->all()[1]->amountIncludingTax, );
+        $this->assertEquals(-50.00, $result->all()[2]->amountIncludingTax, );
     }
 
 
@@ -157,7 +158,7 @@ class LineItemConsistencyServiceTest extends TestCase
         $item->type = LineItem::TYPE_PRODUCT;
 
         $result = $service->sanitizeNegativeLineItems([$item]);
-        $this->assertEquals(100.00, $result[0]->amountIncludingTax);
+        $this->assertEquals(100.00, $result->all()[0]->amountIncludingTax, );
     }
 
     public function testSanitizeNegativeLineItemsOnlyAdjustsDiscountType(): void
@@ -175,7 +176,7 @@ class LineItemConsistencyServiceTest extends TestCase
         // Total = -50. No discount to heal.
         $result = $service->sanitizeNegativeLineItems([$item1, $item2]);
 
-        $this->assertEquals(-100.00, $result[1]->amountIncludingTax); // Should NOT be changed
+        $this->assertEquals(-100.00, $result->all()[1]->amountIncludingTax, ); // Should NOT be changed
     }
 
     public function testSanitizeNegativeLineItemsZeroesPureNegativeDiscount(): void
@@ -188,7 +189,7 @@ class LineItemConsistencyServiceTest extends TestCase
 
         $result = $service->sanitizeNegativeLineItems([$item1]);
 
-        $this->assertEquals(0.00, $result[0]->amountIncludingTax);
+        $this->assertEquals(0.00, $result->all()[0]->amountIncludingTax, );
     }
 
     public function testSmallDiscrepancyAddsAdjustment(): void
@@ -197,7 +198,7 @@ class LineItemConsistencyServiceTest extends TestCase
         $logger->expects($this->once())
             ->method('info')
             ->with(
-                $this->stringContains("Line item discrepancy detected. Expected: 10.00, Calculated: 9.98, Difference: 0.02. Appending 'Rounding Adjustment' line item to satisfy gateway validation."),
+                $this->stringContains("Line item discrepancy detected; appending 'Rounding Adjustment' line item to satisfy gateway validation."),
                 [
                     'expectedAmount' => 10.00,
                     'calculatedAmount' => 9.98,
@@ -225,7 +226,8 @@ class LineItemConsistencyServiceTest extends TestCase
 
         $this->assertCount(2, $result);
 
-        $adjustment = end($result);
+        $items = $result->all();
+        $adjustment = end($items);
         $this->assertEquals('rounding-adjustment', $adjustment->sku);
         $this->assertEquals(0.02, $adjustment->amountIncludingTax);
         $this->assertEquals(LineItem::TYPE_FEE, $adjustment->type);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV1;
 
+use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Sdk\TokenMapperTrait;
@@ -73,6 +74,7 @@ class TokenGateway implements TokenGatewayInterface
                 );
                 throw new MissingTokenException(
                     "Transaction {$transactionId} in Space {$spaceId} has no associated token.",
+                    new LocalizedString('The transaction has no associated token.'),
                 );
             }
 
@@ -90,8 +92,7 @@ class TokenGateway implements TokenGatewayInterface
                 );
                 throw new TokenException(
                     "Failed to create token for transaction {$transactionId}: " . $e->getMessage(),
-                    null,
-                    0,
+                    new LocalizedString('Token creation failed. Please try again or contact support.'),
                     $e,
                 );
             }

@@ -8,15 +8,19 @@ use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use WeArePlanet\PluginCore\Address\Address;
 use WeArePlanet\PluginCore\LineItem\LineItem;
+use WeArePlanet\PluginCore\LineItem\LineItemCollection;
 use WeArePlanet\PluginCore\LineItem\LineItemConsistencyService;
 use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethod;
+use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodCollection;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodSorting;
 use WeArePlanet\PluginCore\PaymentMethod\State as PaymentMethodState;
 use WeArePlanet\PluginCore\Settings\Settings;
+use WeArePlanet\PluginCore\Transaction\PaymentUrl;
 use WeArePlanet\PluginCore\Transaction\State;
 use WeArePlanet\PluginCore\Transaction\Transaction;
+use WeArePlanet\PluginCore\Transaction\TransactionCollection;
 use WeArePlanet\PluginCore\Transaction\TransactionContext;
 use WeArePlanet\PluginCore\Transaction\TransactionGatewayInterface;
 use WeArePlanet\PluginCore\Transaction\TransactionPersistenceInterface;
@@ -40,6 +44,9 @@ class TransactionServiceTest extends TestCase
         $this->logger = $this->createMock(LoggerInterface::class);
         $this->persistence = $this->createMock(TransactionPersistenceInterface::class);
 
+        $this->consistencyService->method('ensureConsistency')
+            ->willReturnCallback(fn (array $items): LineItemCollection => new LineItemCollection(...$items));
+
         $this->service = new TransactionService(
             $this->gateway,
             $this->consistencyService,
@@ -56,7 +63,7 @@ class TransactionServiceTest extends TestCase
         $context->expectedGrandTotal = 100.00;
 
         $this->consistencyService->method('ensureConsistency')
-            ->willReturnArgument(0);
+            ->willReturnCallback(fn (array $items): LineItemCollection => new LineItemCollection(...$items));
 
         $transaction = new Transaction();
         $transaction->id = 100;
@@ -84,7 +91,7 @@ class TransactionServiceTest extends TestCase
         $context->lineItems = [];
 
         $this->consistencyService->method('ensureConsistency')
-            ->willReturnArgument(0);
+            ->willReturnCallback(fn (array $items): LineItemCollection => new LineItemCollection(...$items));
 
         // Expect delegating to gateway instead of throwing exception
         $expectedTx = new Transaction();
@@ -120,7 +127,7 @@ class TransactionServiceTest extends TestCase
 
         $context->lineItems = [$item1, $item2];
 
-        // 1. Mock sanitization: 100, -150 -> 100, -100
+        // Mock sanitization: 100, -150 -> 100, -100
         $sanitizedItem1 = clone $item1;
         $sanitizedItem2 = clone $item2;
         $sanitizedItem2->amountIncludingTax = -100.00;
@@ -128,9 +135,9 @@ class TransactionServiceTest extends TestCase
         $this->consistencyService->expects($this->once())
             ->method('sanitizeNegativeLineItems')
             ->with($context->lineItems)
-            ->willReturn([$sanitizedItem1, $sanitizedItem2]);
+            ->willReturn(new LineItemCollection($sanitizedItem1, $sanitizedItem2));
 
-        // 2. Mock consistency check: 0.00 total
+        // Mock consistency check: 0.00 total
         $this->consistencyService->expects($this->once())
             ->method('ensureConsistency')
             ->with(
@@ -140,7 +147,7 @@ class TransactionServiceTest extends TestCase
                 1,
                 null,
             )
-            ->willReturnArgument(0);
+            ->willReturnCallback(fn (array $items): LineItemCollection => new LineItemCollection(...$items));
 
         $transaction = new Transaction();
         $transaction->id = 777;
@@ -196,16 +203,16 @@ class TransactionServiceTest extends TestCase
 
         // Gateway returns unsorted
         $this->gateway->method('getAvailablePaymentMethods')
-            ->willReturn([$methodC, $methodA, $methodB]);
+            ->willReturn(new PaymentMethodCollection($methodC, $methodA, $methodB));
 
         // Default (No Sort) — preserves gateway order
-        $default = $this->service->getAvailablePaymentMethods($spaceId, $transactionId, PaymentMethodSorting::DEFAULT);
+        $default = $this->service->getAvailablePaymentMethods($spaceId, $transactionId, PaymentMethodSorting::DEFAULT)->all();
         $this->assertSame($methodC, $default[0]);
         $this->assertSame($methodA, $default[1]);
         $this->assertSame($methodB, $default[2]);
 
         // Sorted by Name — primary: sortOrder, secondary: alphabetical title
-        $sorted = $this->service->getAvailablePaymentMethods($spaceId, $transactionId, PaymentMethodSorting::NAME);
+        $sorted = $this->service->getAvailablePaymentMethods($spaceId, $transactionId, PaymentMethodSorting::NAME)->all();
         $this->assertSame($methodB, $sorted[0]); // sortOrder=1, "Apollo"
         $this->assertSame($methodA, $sorted[1]); // sortOrder=1, "Zeus"
         $this->assertSame($methodC, $sorted[2]); // sortOrder=99, despite alphabetically first
@@ -217,7 +224,7 @@ class TransactionServiceTest extends TestCase
         $limit = 5;
         $tx = new Transaction();
         $tx->state = State::PENDING;
-        $expectedResults = [$tx];
+        $expectedResults = new TransactionCollection($tx);
 
         $this->gateway->expects($this->once())
             ->method('search')
@@ -237,14 +244,16 @@ class TransactionServiceTest extends TestCase
     {
         $spaceId = 1;
         $txId = 999;
-        $url = "http://example.com";
+        $paymentUrl = new PaymentUrl("http://example.com");
 
         $this->gateway->expects($this->once())
             ->method('getPaymentUrl')
             ->with($spaceId, $txId)
-            ->willReturn($url);
+            ->willReturn($paymentUrl);
 
-        $this->assertSame($url, $this->service->getPaymentUrl($spaceId, $txId));
+        $result = $this->service->getPaymentUrl($spaceId, $txId);
+        $this->assertSame($paymentUrl, $result);
+        $this->assertSame("http://example.com", $result->value);
     }
 
     public function testGetTransactionDelegatesToGateway(): void
@@ -267,7 +276,7 @@ class TransactionServiceTest extends TestCase
         $criteria = new TransactionSearchCriteria();
         $tx = new Transaction();
         $tx->state = State::PENDING;
-        $expectedResults = [$tx];
+        $expectedResults = new TransactionCollection($tx);
 
         $this->gateway->expects($this->once())
             ->method('search')
@@ -283,7 +292,7 @@ class TransactionServiceTest extends TestCase
         $context->spaceId = 1;
         $context->transactionId = 123;
 
-        // 1. Mock Find (Return Domain Object)
+        // Mock Find (Return Domain Object)
         $domainTx = new Transaction();
         $domainTx->id = 123;
         $domainTx->version = 5;
@@ -293,7 +302,7 @@ class TransactionServiceTest extends TestCase
             ->method('find')
             ->willReturn($domainTx);
 
-        // 2. Mock Update (Pass ID 123, Version 5)
+        // Mock Update (Pass ID 123, Version 5)
         $updateResult = new Transaction();
         $updateResult->id = 123;
         $updateResult->version = 6;
@@ -313,7 +322,7 @@ class TransactionServiceTest extends TestCase
 
     public function testUpdateFailureFallsBackToCreate(): void
     {
-        // 1. Setup a FULLY valid Context
+        // Setup a FULLY valid Context
         $context = new TransactionContext();
         $context->spaceId = 1;
         $context->transactionId = 123;
@@ -330,7 +339,7 @@ class TransactionServiceTest extends TestCase
         $context->billingAddress->givenName = 'Test';
         $context->billingAddress->familyName = 'User';
 
-        // 2. Mock Find
+        // Mock Find
         $domainTx = new Transaction();
         $domainTx->id = 123;
         $domainTx->version = 1;
@@ -341,13 +350,13 @@ class TransactionServiceTest extends TestCase
             ->with(1, 123)
             ->willReturn($domainTx);
 
-        // 3. Mock Update (FAILURE)
+        // Mock Update (FAILURE)
         $this->gateway->expects($this->once())
             ->method('update')
             ->with(123, 1, $context)
             ->willThrowException(new \Exception("Update failed"));
 
-        // 4. Mock Create (Fallback)
+        // Mock Create (Fallback)
         $fallbackResult = new Transaction();
         $fallbackResult->id = 999;
         $fallbackResult->state = State::PENDING;
@@ -357,7 +366,7 @@ class TransactionServiceTest extends TestCase
             ->with($context)
             ->willReturn($fallbackResult);
 
-        // 5. Expect Persistence (New ID)
+        // Expect Persistence (New ID)
         $this->persistence->expects($this->once())
             ->method('persist')
             ->with(999);
@@ -396,7 +405,7 @@ class TransactionServiceTest extends TestCase
         // Expect sanitization
         $this->consistencyService->expects($this->once())
             ->method('sanitizeNegativeLineItems')
-            ->willReturn($context->lineItems); // Just return same for simplicity in mock
+            ->willReturn(new LineItemCollection(...$context->lineItems, )); // Just return same for simplicity in mock
 
         $this->gateway->expects($this->once())
             ->method('update')

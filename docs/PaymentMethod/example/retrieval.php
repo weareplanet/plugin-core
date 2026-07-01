@@ -66,9 +66,10 @@ try {
     echo "Found " . count($paymentMethods) . " payment methods:\n";
     foreach ($paymentMethods as $paymentMethod) {
         $state = $paymentMethod->state->value;
-        echo "- [ID: {$paymentMethod->id}] {$paymentMethod->name} (State: $state)\n";
-        if ($paymentMethod->description) {
-            echo "  Description: {$paymentMethod->description}\n";
+        echo "- [ID: {$paymentMethod->id}] {$paymentMethod->title->getDefault()} (State: $state)\n";
+        $description = $paymentMethod->description->getDefault();
+        if ($description !== '') {
+            echo "  Description: {$description}\n";
         }
         echo "  Image Path: " . $paymentMethod->getRelativeImagePath() . "\n";
     }

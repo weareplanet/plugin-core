@@ -4,18 +4,17 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV1;
 
-use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethod;
+use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodCollection;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodGatewayInterface;
-use WeArePlanet\PluginCore\PaymentMethod\State;
+use WeArePlanet\PluginCore\Sdk\PaymentMethodMapperTrait;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\Sdk\Model\CreationEntityState as SdkCreationEntityState;
 use WeArePlanet\Sdk\Model\CriteriaOperator as SdkCriteriaOperator;
 use WeArePlanet\Sdk\Model\EntityQuery as SdkEntityQuery;
 use WeArePlanet\Sdk\Model\EntityQueryFilter as SdkEntityQueryFilter;
 use WeArePlanet\Sdk\Model\EntityQueryFilterType as SdkEntityQueryFilterType;
-use WeArePlanet\Sdk\Model\PaymentMethodConfiguration as SdkPaymentMethodConfiguration;
 use WeArePlanet\Sdk\Service\PaymentMethodConfigurationService as SdkPaymentMethodConfigurationService;
 
 /**
@@ -23,6 +22,8 @@ use WeArePlanet\Sdk\Service\PaymentMethodConfigurationService as SdkPaymentMetho
  */
 class PaymentMethodGateway implements PaymentMethodGatewayInterface
 {
+    use PaymentMethodMapperTrait;
+
     /**
      * @param SdkProvider $provider The SDK provider.
      * @param LoggerInterface $logger The logger instance.
@@ -62,9 +63,13 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
 
             $config = $service->read($spaceId, $id);
 
-            return $this->mapToEntity($config);
+            return $this->mapToPaymentMethod($config);
         } catch (\Exception $e) {
-            $this->logger->error(sprintf('Failed to fetch payment method %d from SDK: %s', $id, $e->getMessage()));
+            $this->logger->error('Failed to fetch payment method from SDK.', [
+                'paymentMethodId' => $id,
+                'spaceId' => $spaceId,
+                'exception' => $e,
+            ]);
             throw new \RuntimeException(sprintf('Payment method %d not found.', $id), 0, $e);
         }
     }
@@ -72,7 +77,7 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
     /**
      * @inheritDoc
      */
-    public function fetchBySpaceId(int $spaceId, ?string $state = null): array
+    public function fetchBySpaceId(int $spaceId, ?string $state = null): PaymentMethodCollection
     {
         try {
             /** @var SdkPaymentMethodConfigurationService $service */
@@ -90,32 +95,14 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
 
             $results = $service->search($spaceId, $query);
 
-            return array_map(fn (SdkPaymentMethodConfiguration $config) => $this->mapToEntity($config), $results);
+            return new PaymentMethodCollection(...array_map([$this, 'mapToPaymentMethod'], $results));
         } catch (\Exception $e) {
-            $this->logger->error(sprintf('Failed to fetch payment methods from SDK: %s', $e->getMessage()));
+            $this->logger->error('Failed to fetch payment methods from SDK.', [
+                'spaceId' => $spaceId,
+                'exception' => $e,
+            ]);
             throw $e;
         }
     }
 
-    /**
-     * Maps an SDK configuration to a domain entity.
-     *
-     * The LocalizedString VO takes ownership of locale resolution,
-     * so we pass the raw SDK maps directly without pre-resolving.
-     *
-     * @param SdkPaymentMethodConfiguration $config The SDK configuration.
-     * @return PaymentMethod The domain entity.
-     */
-    private function mapToEntity(SdkPaymentMethodConfiguration $config): PaymentMethod
-    {
-        return new PaymentMethod(
-            id: $config->getId(),
-            spaceId: $config->getLinkedSpaceId(),
-            state: State::from((string) $config->getState()),
-            title: new LocalizedString($config->getResolvedTitle() ?? $config->getName()),
-            description: new LocalizedString($config->getResolvedDescription() ?? $config->getDescription()),
-            sortOrder: $config->getSortOrder(),
-            imageUrl: $config->getResolvedImageUrl(),
-        );
-    }
 }
