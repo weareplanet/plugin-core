@@ -87,7 +87,7 @@ try {
     echo "Validation failed: " . $e->getMessage();
 } catch (RefundException $e) {
     // Thrown when the gateway/API rejects the refund; carries a localized reason.
-    echo "Refund failed: " . ($e->getLocalizedReason()?->localize('en-US') ?? $e->getMessage());
+    echo "Refund failed: " . ($e->getLocalizedMessage()?->localize('en-US') ?? $e->getMessage());
 }
 ```
 

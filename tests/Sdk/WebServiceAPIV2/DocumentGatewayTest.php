@@ -56,7 +56,7 @@ class DocumentGatewayTest extends TestCase
         $sdkCompletion = $this->createMock(SdkTransactionCompletion::class);
         $sdkCompletion->method('getId')->willReturn(40);
 
-        // 1. Completion Retrieval
+        // Completion Retrieval
         $this->completionService->expects($this->once())
             ->method('getPaymentTransactionsCompletionsSearch')
             ->with($spaceId, null, 1, null, null, "lineItemVersion.transaction.id:$transactionId")
@@ -65,7 +65,7 @@ class DocumentGatewayTest extends TestCase
         $sdkInvoice = new SdkTransactionInvoice();
         $sdkInvoice->setId($invoiceId);
 
-        // 2. Invoice Search: getPaymentTransactionsInvoicesSearch($space, filter, limit, offset, order, query)
+        // Invoice Search: getPaymentTransactionsInvoicesSearch($space, filter, limit, offset, order, query)
         $this->invoiceService->expects($this->once())
             ->method('getPaymentTransactionsInvoicesSearch')
             ->with($spaceId, null, 1, null, null, "completion:40")
@@ -92,7 +92,7 @@ class DocumentGatewayTest extends TestCase
     public function testGetInvoiceThrowsExceptionIfNotFound(): void
     {
         $this->expectException(\Exception::class);
-        $this->expectExceptionMessage("No invoice found for transaction 2");
+        $this->expectExceptionMessage("No completion found for transaction 2 in space 1 when fetching invoice.");
 
         // Fail at completion step
         $this->completionService->expects($this->once())

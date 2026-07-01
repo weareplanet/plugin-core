@@ -24,7 +24,7 @@ interface PaymentMethodGatewayInterface
      *
      * @param int $spaceId The ID of the space.
      * @param string|null $state Optional state to filter by.
-     * @return PaymentMethod[] List of available payment methods.
+     * @return PaymentMethodCollection List of available payment methods.
      */
-    public function fetchBySpaceId(int $spaceId, ?string $state = null): array;
+    public function fetchBySpaceId(int $spaceId, ?string $state = null): PaymentMethodCollection;
 }

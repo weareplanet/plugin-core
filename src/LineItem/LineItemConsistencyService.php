@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\LineItem;
 
 use WeArePlanet\PluginCore\LineItem\Exception\LineItemConsistencyException;
+use WeArePlanet\PluginCore\LineItem\LineItemCollection;
+use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Settings\Settings;
 
@@ -44,7 +46,7 @@ class LineItemConsistencyService
      * @param string $currencyCode The currency of the transaction.
      * @param int|null $spaceId The unique space identifier for log tracing.
      * @param int|null $transactionId The unique transaction identifier for log tracing.
-     * @return LineItem[] The consistent list of line items.
+     * @return LineItemCollection The consistent list of line items.
      * @throws LineItemConsistencyException If the discrepancy is too large to fix safely.
      */
     public function ensureConsistency(
@@ -53,33 +55,33 @@ class LineItemConsistencyService
         string $currencyCode,
         ?int $spaceId = null,
         ?int $transactionId = null,
-    ): array {
+    ): LineItemCollection {
         $calculatedTotal = $this->calculateSum($lineItems);
         $difference = $expectedTotal - $calculatedTotal;
 
         // Exact Match Handling
         // If the difference is below the float epsilon, we consider it a perfect match.
         if (abs($difference) < 0.000001) {
-            return $lineItems;
+            return new LineItemCollection(...$lineItems);
         }
 
         // Feature Toggle Check
         // Some integrations may prefer a hard failure over automatic adjustments.
         if (!$this->settings->isLineItemConsistencyEnabled()) {
-            $msg = sprintf(
-                "Line item discrepancy of %.2f detected (Expected: %.2f, Calculated: %.2f). Line item consistency enforcement is DISABLED. Proceeding with mismatched totals. The WeArePlanet API will likely reject this request or hide payment methods.",
-                $difference,
-                $expectedTotal,
-                $calculatedTotal,
+            $this->logger->warning(
+                "Line item discrepancy detected but consistency enforcement is DISABLED. Proceeding with mismatched totals; the WeArePlanet API will likely reject this request or hide payment methods.",
+                [
+                    'expectedAmount' => $expectedTotal,
+                    'calculatedAmount' => $calculatedTotal,
+                    'difference' => round($difference, 2),
+                    'spaceId' => $spaceId,
+                    'transactionId' => $transactionId,
+                ],
             );
-            $this->logger->warning($msg, [
-                'expectedAmount' => $expectedTotal,
-                'calculatedAmount' => $calculatedTotal,
-                'difference' => round($difference, 2),
-                'spaceId' => $spaceId,
-                'transactionId' => $transactionId,
-            ]);
-            throw new LineItemConsistencyException("Mismatch found ($difference) but auto-correction is DISABLED.");
+            throw new LineItemConsistencyException(
+                "Mismatch found ($difference) but auto-correction is DISABLED.",
+                new LocalizedString('Line item discrepancy detected but auto-correction is disabled.'),
+            );
         }
 
         // Safety Threshold Validation
@@ -87,25 +89,28 @@ class LineItemConsistencyService
         // A larger difference usually indicates a genuine calculated bug rather than a rounding issue.
         if (abs($difference) > self::MAX_ALLOWED_DIFFERENCE) {
             $threshold = self::MAX_ALLOWED_DIFFERENCE;
-            $this->logger->error("Rounding difference ($difference) exceeds safety threshold ($threshold). Aborting.");
-            throw new LineItemConsistencyException("Rounding difference ($difference) exceeds safety threshold ($threshold). Aborting.");
+            $this->logger->error("Rounding difference exceeds safety threshold; aborting.", [
+                'difference' => round($difference, 2),
+                'threshold' => $threshold,
+            ]);
+            throw new LineItemConsistencyException(
+                "Rounding difference ($difference) exceeds safety threshold ($threshold). Aborting.",
+                new LocalizedString('Rounding difference exceeds safety threshold.'),
+            );
         }
 
         // Rounding Correction
         // We append a technical fee/discount item to bridge the gap.
-        $msg = sprintf(
-            "Line item discrepancy detected. Expected: %.2f, Calculated: %.2f, Difference: %.2f. Appending 'Rounding Adjustment' line item to satisfy gateway validation.",
-            $expectedTotal,
-            $calculatedTotal,
-            $difference,
+        $this->logger->info(
+            "Line item discrepancy detected; appending 'Rounding Adjustment' line item to satisfy gateway validation.",
+            [
+                'expectedAmount' => $expectedTotal,
+                'calculatedAmount' => $calculatedTotal,
+                'difference' => round($difference, 2),
+                'spaceId' => $spaceId,
+                'transactionId' => $transactionId,
+            ],
         );
-        $this->logger->info($msg, [
-            'expectedAmount' => $expectedTotal,
-            'calculatedAmount' => $calculatedTotal,
-            'difference' => round($difference, 2),
-            'spaceId' => $spaceId,
-            'transactionId' => $transactionId,
-        ]);
 
         $adjustmentItem = new LineItem();
         $adjustmentItem->uniqueId = self::ADJUSTMENT_SKU;
@@ -118,7 +123,7 @@ class LineItemConsistencyService
 
         $lineItems[] = $adjustmentItem;
 
-        return $lineItems;
+        return new LineItemCollection(...$lineItems);
     }
 
     /**
@@ -129,9 +134,9 @@ class LineItemConsistencyService
      * discount amounts to bring the total exactly to zero.
      *
      * @param LineItem[] $lineItems Original line items.
-     * @return LineItem[] Sanitized items with capped discounts.
+     * @return LineItemCollection Sanitized items with capped discounts.
      */
-    public function sanitizeNegativeLineItems(array $lineItems): array
+    public function sanitizeNegativeLineItems(array $lineItems): LineItemCollection
     {
         $totalSum = 0.0;
         $discountSum = 0.0;
@@ -145,12 +150,12 @@ class LineItemConsistencyService
 
         // Pre-condition: Is the total actually negative?
         if ($totalSum >= -0.00000001) {
-            return $lineItems;
+            return new LineItemCollection(...$lineItems);
         }
 
         // Pre-condition: Are there any discounts to adjust?
         if (abs($discountSum) < 0.00000001) {
-            return $lineItems;
+            return new LineItemCollection(...$lineItems);
         }
 
         $this->logger->warning("Transaction total was negative. Auto-capped discounts to equal product value.");
@@ -170,7 +175,7 @@ class LineItemConsistencyService
             $sanitizedItems[] = $cloned;
         }
 
-        return $sanitizedItems;
+        return new LineItemCollection(...$sanitizedItems);
     }
 
     /**
@@ -183,7 +188,7 @@ class LineItemConsistencyService
     {
         $strategy = $this->settings->getLineItemRoundingStrategy();
 
-        $this->logger->debug("Calculating sum using strategy: {$strategy->value}");
+        $this->logger->debug("Calculating line item sum.", ['strategy' => $strategy->value]);
 
         $sum = 0.0;
         foreach ($lineItems as $item) {
@@ -196,7 +201,7 @@ class LineItemConsistencyService
         }
 
         $result = round($sum, 2);
-        $this->logger->debug("Calculated total: $result");
+        $this->logger->debug("Calculated line item total.", ['total' => $result]);
 
         return $result;
     }

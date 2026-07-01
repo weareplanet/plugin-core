@@ -84,7 +84,7 @@ $item->addTax(new Tax('VAT', 7.7));
 $context->lineItems = [$item];
 $context->expectedGrandTotal = 150.00;
 
-// 5. Execute Upsert
+// Execute Upsert
 echo "Sending to WeArePlanet...\n";
 
 try {

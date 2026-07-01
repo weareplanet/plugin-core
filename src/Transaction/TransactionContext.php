@@ -22,6 +22,7 @@ class TransactionContext
     public ?int $transactionId = null; // If updating an existing transaction
     public string $merchantReference; // The Order Number (e.g., "10000001")
     public string $customerId;
+
     /*
      * The token used to create the transaction.
      */

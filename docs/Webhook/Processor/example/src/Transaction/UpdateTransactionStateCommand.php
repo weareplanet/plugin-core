@@ -26,12 +26,12 @@ class UpdateTransactionStateCommand extends WebhookCommand
         // --- SAFE UPDATE PATTERN EXAMPLE ---
         // In a real integration (e.g., Magento), you must prevent race conditions here.
         //
-        // 1. RELOAD FRESH DATA:
+        // RELOAD FRESH DATA:
         //    Do not trust the order object you loaded before the lock.
         //    Reload it from the database now that you have the lock.
         //    $freshOrder = $this->orderRepository->get($entityId);
         //
-        // 2. CHECK PROTECTED STATES:
+        // CHECK PROTECTED STATES:
         //    Check if the order is in a state that should NOT be overwritten
         //    (e.g. 'Manual Review', 'Shipped', 'Canceled').
         //
@@ -43,7 +43,7 @@ class UpdateTransactionStateCommand extends WebhookCommand
 
         $this->logger->info("Executing command: Processing transaction {$entityId} from '{$previous}' to '{$current}'.");
 
-        // 3. PERFORM UPDATE:
+        // PERFORM UPDATE:
         //    $freshOrder->setState('PROCESSING');
         //    $this->orderRepository->save($freshOrder);
 

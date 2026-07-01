@@ -6,9 +6,9 @@ namespace MyPlugin\ExampleRefundImplementation;
  * Refund Example
  * 
  * This script demonstrates the Refund functionality:
- * 1. Validates refund (fails if amount too high).
- * 2. Creating a Partial Refund.
- * 3. Creating a Full Refund (of remaining amount).
+ * Validates refund (fails if amount too high).
+ * Creating a Partial Refund.
+ * Creating a Full Refund (of remaining amount).
  * 
  * USAGE:
  * php refund.php [session_file_or_dir] [transaction_id]
@@ -29,7 +29,7 @@ use WeArePlanet\PluginCore\Refund\Type as TypeEnum;
 use WeArePlanet\PluginCore\Refund\Exception\InvalidRefundException;
 use WeArePlanet\PluginCore\Examples\Common\TransactionIdLoader;
 
-// 1. Initialize Services via Bootstrap
+// Initialize Services via Bootstrap
 $common = require __DIR__ . '/../../examples/Common/bootstrap.php';
 
 $spaceId = $common['spaceId'];
@@ -39,7 +39,7 @@ $logger = $common['logger'];
 $settings = $common['settings'];
 $sdkProvider = $common['sdkProvider'];
 
-// 2. Load Transaction ID
+// Load Transaction ID
 try {
     $transactionId = TransactionIdLoader::load($argv);
 } catch (\Exception $e) {
@@ -48,7 +48,7 @@ try {
 
 echo "Operating on Transaction ID: $transactionId\n";
 
-// 3. Setup Services
+// Setup Services
 $transactionGateway = new TransactionGateway($sdkProvider, $logger, $settings);
 $refundGateway = new RefundGateway($sdkProvider, $logger);
 
@@ -107,7 +107,7 @@ function list_refunds($service, $spaceId, $transactionId)
     }
 }
 
-// 4. Load Transaction to see current state
+// Load Transaction to see current state
 try {
     $transaction = $transactionService->getTransaction((int)$spaceId, $transactionId);
     echo "Current Authorized Amount: " . $transaction->authorizedAmount . "\n";
@@ -124,7 +124,7 @@ try {
     exit("Failed to load transaction: " . $e->getMessage() . "\n");
 }
 
-// 5. TEST: Validation Error (Over-refund)
+// TEST: Validation Error (Over-refund)
 echo "\n--- TEST 1: Validation Error (Refund Amount > Authorized) ---\n";
 $excessiveAmount = $transaction->authorizedAmount + 10.0;
 $context = new RefundContext(
@@ -143,7 +143,7 @@ try {
     echo "FAILED: Caught unexpected exception: " . $e->getMessage() . "\n";
 }
 
-// 6. TEST: Partial Refund
+// TEST: Partial Refund
 echo "\n--- TEST 2: Partial Refund (10.00 per unit for Swiss Watch) ---\n";
 
 // Find the Swiss Watch line item to determine valid refund amount
@@ -193,7 +193,7 @@ if (!$targetItem) {
     }
 }
 
-// 7. TEST: Full Remaining Refund (if any left)
+// TEST: Full Remaining Refund (if any left)
 echo "\n--- TEST 3: Refund Remaining Balance ---\n";
 // Reload transaction to get updated refundedAmount
 $transaction = $transactionService->getTransaction((int)$spaceId, $transactionId);

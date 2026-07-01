@@ -100,7 +100,7 @@ $persistence = new ShopPersistenceStrategy();
 $transaction = $transactionService->upsert($context, $persistence);
 
 // 3. Get the Payment URL
-$paymentUrl = $transactionService->getPaymentUrl($spaceId, $transaction->id);
+$paymentUrl = $transactionService->getPaymentUrl($spaceId, $transaction->id)->value;
 
 // 4. Redirect or Render
 if ($settings->getIntegrationMode() === IntegrationMode::PAYMENT_PAGE) {
@@ -134,7 +134,7 @@ sequenceDiagram
     PluginCore-->>ShopController: CreatedTransaction
     
     ShopController->>PluginCore: getPaymentUrl()
-    PluginCore-->>ShopController: URL (Page or JS)
+    PluginCore-->>ShopController: PaymentUrl VO (Page or JS)
     
     ShopController-->>User: Redirect or Show Iframe
 ```

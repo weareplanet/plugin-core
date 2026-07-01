@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\Webhook;
 
 use WeArePlanet\PluginCore\Http\Request;
+use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Webhook\Enum\WebhookListener;
 use WeArePlanet\PluginCore\Webhook\Exception\CommandException;
@@ -39,10 +40,10 @@ class WebhookProcessor
     /**
      * Orchestrates the webhook processing lifecycle.
      *
-     * 1. Extracts context and fetches current state.
-     * 2. Validates the transition path (handles stales/duplicates).
-     * 3. Executes required side effects for each step in the path.
-     * 4. Handles failures with automatic rollback and retry signaling.
+     * - Extracts context and fetches current state.
+     * - Validates the transition path (handles stales/duplicates).
+     * - Executes required side effects for each step in the path.
+     * - Handles failures with automatic rollback and retry signaling.
      *
      * @param Request $request The incoming webhook request.
      * @throws CommandException If processing fails in a way that warrants a retry.
@@ -51,6 +52,9 @@ class WebhookProcessor
     {
         $context = null;
         $webhookListener = null;
+        $technicalName = null;
+        $entityId = null;
+        $spaceId = null;
 
         try {
             // Context Extraction
@@ -61,7 +65,10 @@ class WebhookProcessor
             if (!$technicalName || !$entityId || !$spaceId) {
                 // We strictly require these fields to identify which business logic to apply.
                 // Missing fields indicate a bad payload that cannot be recovered.
-                throw new CommandException('Request body is missing required fields (technicalName, entityId, or spaceId).');
+                throw new CommandException(
+                    "Request body is missing required fields (technicalName, entityId, or spaceId). Got technicalName: '{$technicalName}', entityId: '{$entityId}', spaceId: '{$spaceId}'.",
+                    new LocalizedString('Request body is missing required fields (technicalName, entityId, or spaceId).'),
+                );
             }
 
             $remoteState = $this->stateFetcher->fetchState($request, $entityId);
@@ -76,20 +83,38 @@ class WebhookProcessor
                 // Stale Webhook Handling
                 // Occurs when a webhook arrives for a state we have already bypassed (e.g. AUTHORIZED arriving after FULFILL).
                 // We ignore these to prevent reverting the entity to an older state.
-                $this->logger->debug("State transition from \"$lastProcessedState\" to \"$remoteState\" is not possible or already passed. Ignoring webhook for entity $technicalName/$entityId.");
+                $this->logger->debug(
+                    "State transition is not possible or already passed. Ignoring webhook.",
+                    [
+                        'lastProcessedState' => $lastProcessedState,
+                        'remoteState' => $remoteState,
+                        'technicalName' => $technicalName,
+                        'entityId' => $entityId,
+                    ],
+                );
                 return;
             }
 
             if (empty($transitionPath)) {
                 // Duplicate Webhook Handling
                 // Occurs when we receive a notification for a state we just finished processing.
-                $this->logger->debug("Webhook for entity $technicalName/$entityId already processed. Ignoring duplicate.");
+                $this->logger->debug("Webhook already processed; ignoring duplicate.", [
+                    'technicalName' => $technicalName,
+                    'entityId' => $entityId,
+                    'spaceId' => $spaceId,
+                ]);
                 return;
             }
 
             // State Transition Execution
-            $pathStr = implode(' -> ', $transitionPath);
-            $this->logger->info("Processing transition path for entity $technicalName/$entityId from $lastProcessedState to $remoteState: [$pathStr]");
+            $this->logger->info("Processing transition path.", [
+                'technicalName' => $technicalName,
+                'entityId' => $entityId,
+                'fromState' => $lastProcessedState,
+                'toState' => $remoteState,
+                'transitionPath' => $transitionPath,
+                'spaceId' => $spaceId,
+            ]);
 
             $currentStateInLoop = $lastProcessedState;
 
@@ -101,7 +126,12 @@ class WebhookProcessor
                 $shouldProceed = $this->lifecycleHandler->preProcess($webhookListener, $context);
 
                 if (!$shouldProceed) {
-                    $this->logger->debug("Race condition: Step $technicalName/$stateToProcess already processed. Skipping.");
+                    $this->logger->debug("Race condition: step already processed; skipping.", [
+                        'technicalName' => $technicalName,
+                        'state' => $stateToProcess,
+                        'entityId' => $entityId,
+                        'spaceId' => $spaceId,
+                    ]);
                     // Even if skipped, we must invoke onFailure to ensure the lifecycle handler releases any acquired resources.
                     $this->lifecycleHandler->onFailure($webhookListener, $context, new SkippedStepException('Skipped due to race condition.'));
                     $currentStateInLoop = $stateToProcess;
@@ -114,13 +144,23 @@ class WebhookProcessor
                 if ($listener !== null) {
                     // Command Execution
                     // Each step in the path may trigger a specific business command (e.g. creating an invoice).
-                    $this->logger->debug("Processing step: $technicalName/$stateToProcess (Listener found)");
+                    $this->logger->debug("Processing step (listener found).", [
+                        'technicalName' => $technicalName,
+                        'state' => $stateToProcess,
+                        'entityId' => $entityId,
+                        'spaceId' => $spaceId,
+                    ]);
                     $command = $listener->getCommand($context);
                     $commandResult = $command->execute();
                 } else {
                     // No-op Step
                     // Not every state transition requires a side effect, but we still track it as "processed".
-                    $this->logger->debug("Processing step: $technicalName/$stateToProcess (No listener registered, skipping command)");
+                    $this->logger->debug("Processing step (no listener registered, skipping command).", [
+                        'technicalName' => $technicalName,
+                        'state' => $stateToProcess,
+                        'entityId' => $entityId,
+                        'spaceId' => $spaceId,
+                    ]);
                 }
 
                 $this->lifecycleHandler->postProcess($webhookListener, $context, $commandResult);
@@ -131,19 +171,23 @@ class WebhookProcessor
         } catch (CommandException $e) {
             // Validation Failures or Command issues caught as CommandException.
             // These represent client-side errors (bad payload). We log them as warnings as they don't require system-level intervention.
-            $this->logger->warning("Webhook validation failed: {$e->getMessage()}");
+            $this->logger->warning("Webhook validation failed.", ['exception' => $e]);
         } catch (\Throwable $e) {
             // Failure Recovery
             // We invoke the onFailure hook to rollback active transactions and release locks.
             if ($context && $webhookListener) {
                 $this->lifecycleHandler->onFailure($webhookListener, $context, $e);
             }
-            $this->logger->error("Webhook processing failed: {$e->getMessage()}", ['exception' => $e]);
+            $this->logger->error("Webhook processing failed.", ['exception' => $e]);
 
             // Retry Strategy
             // Re-throwing as CommandException signals the Controller to return a 5xx status.
             // This prompts the Portal to retry the delivery later, which is essential for transient failures (e.g. DB locks, network errors).
-            throw new CommandException('Webhook command execution failed.', previous: $e);
+            throw new CommandException(
+                "Webhook command execution failed for entity {$entityId} with listener {$technicalName} under space {$spaceId}.",
+                new LocalizedString('Webhook command execution failed.'),
+                $e,
+            );
         }
     }
 

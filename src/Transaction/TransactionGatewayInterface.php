@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Transaction;
 
-use WeArePlanet\PluginCore\PaymentMethod\PaymentMethod;
+use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodCollection;
 
 interface TransactionGatewayInterface
 {
@@ -39,26 +39,26 @@ interface TransactionGatewayInterface
      *
      * @param int $spaceId The space ID.
      * @param int $transactionId The transaction ID.
-     * @return PaymentMethod[] The available payment methods.
+     * @return PaymentMethodCollection The available payment methods.
      */
-    public function getAvailablePaymentMethods(int $spaceId, int $transactionId): array;
+    public function getAvailablePaymentMethods(int $spaceId, int $transactionId): PaymentMethodCollection;
 
     /**
      * Gets all active payment method configurations.
      *
      * @param int $spaceId The space ID.
-     * @return PaymentMethod[] The payment method configurations.
+     * @return PaymentMethodCollection The payment method configurations.
      */
-    public function getPaymentMethodConfigurations(int $spaceId): array;
+    public function getPaymentMethodConfigurations(int $spaceId): PaymentMethodCollection;
 
     /**
      * Gets the payment URL for a transaction.
      *
      * @param int $spaceId The space ID.
      * @param int $transactionId The transaction ID.
-     * @return string The payment URL.
+     * @return PaymentUrl The payment URL value object.
      */
-    public function getPaymentUrl(int $spaceId, int $transactionId): string;
+    public function getPaymentUrl(int $spaceId, int $transactionId): PaymentUrl;
 
     /**
      * Updates an existing transaction.
@@ -75,7 +75,7 @@ interface TransactionGatewayInterface
      *
      * @param int $spaceId The space ID.
      * @param TransactionSearchCriteria $criteria The search criteria.
-     * @return Transaction[] The matching transactions.
+     * @return TransactionCollection The matching transactions.
      */
-    public function search(int $spaceId, TransactionSearchCriteria $criteria): array;
+    public function search(int $spaceId, TransactionSearchCriteria $criteria): TransactionCollection;
 }

@@ -22,7 +22,7 @@ interface WebhookManagementGatewayInterface
      * @param array<string> $eventStates The list of states that trigger the event.
      * @param string $name
      * @param bool $notifyEveryChange
-     * @return int The ID of the created Webhook Listener.
+     * @return WebhookListener The created Webhook Listener.
      */
     public function createListener(
         int $spaceId,
@@ -31,7 +31,7 @@ interface WebhookManagementGatewayInterface
         array $eventStates,
         string $name,
         bool $notifyEveryChange = false,
-    ): int;
+    ): WebhookListener;
 
     /**
      * Creates a webhook URL definition in the portal.
@@ -39,13 +39,13 @@ interface WebhookManagementGatewayInterface
      * @param int $spaceId The space ID where the webhook URL is defined.
      * @param string $url The actual URL endpoint.
      * @param string $name The name for the webhook URL definition.
-     * @return int The ID of the created Webhook URL.
+     * @return WebhookUrl The created Webhook URL.
      */
     public function createUrl(
         int $spaceId,
         string $url,
         string $name,
-    ): int;
+    ): WebhookUrl;
 
     /**
      * Deletes a webhook listener.
@@ -88,12 +88,12 @@ interface WebhookManagementGatewayInterface
      *
      * @param int $spaceId
      * @param int $urlId
-     * @return WebhookListener[]
+     * @return WebhookListenerCollection
      */
     public function getWebhookListeners(
         int $spaceId,
         int $urlId,
-    ): array;
+    ): WebhookListenerCollection;
 
     /**
      * Gets webhook URLs for a space, optionally filtered by state.
@@ -102,32 +102,32 @@ interface WebhookManagementGatewayInterface
      *
      * @param int         $spaceId
      * @param string|null $state   One of CreationEntityState::* constants, or null for all.
-     * @return WebhookUrl[]
+     * @return WebhookUrlCollection
      */
     public function getWebhookUrls(
         int $spaceId,
         ?string $state = 'ACTIVE',
-    ): array;
+    ): WebhookUrlCollection;
 
     /**
      * Lists webhook listeners in the portal.
      *
      * @param int $spaceId
-     * @return WebhookListener[]
+     * @return WebhookListenerCollection
      */
     public function listListeners(
         int $spaceId,
-    ): array;
+    ): WebhookListenerCollection;
 
     /**
      * Lists webhook URL definitions in the portal.
      *
      * @param int $spaceId
-     * @return WebhookUrl[]
+     * @return WebhookUrlCollection
      */
     public function listUrls(
         int $spaceId,
-    ): array;
+    ): WebhookUrlCollection;
 
     /**
      * Updates an existing webhook listener.
@@ -136,14 +136,14 @@ interface WebhookManagementGatewayInterface
      * @param int $listenerId
      * @param WebhookListenerEnum $entity
      * @param array<string> $eventStates
-     * @return void
+     * @return WebhookListener The updated webhook listener.
      */
     public function updateListener(
         int $spaceId,
         int $listenerId,
         WebhookListenerEnum $entity,
         array $eventStates,
-    ): void;
+    ): WebhookListener;
 
     /**
      * Updates an existing webhook URL definition.
@@ -151,11 +151,11 @@ interface WebhookManagementGatewayInterface
      * @param int $spaceId The space ID.
      * @param int $webhookUrlId The ID of the webhook URL definition to update.
      * @param string $newUrl The new URL endpoint.
-     * @return void
+     * @return WebhookUrl The updated webhook URL definition.
      */
     public function updateUrl(
         int $spaceId,
         int $webhookUrlId,
         string $newUrl,
-    ): void;
+    ): WebhookUrl;
 }

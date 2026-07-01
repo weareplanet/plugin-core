@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\Webhook;
 
 use WeArePlanet\PluginCore\Http\Request;
+use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Settings\Settings;
 use WeArePlanet\PluginCore\Webhook\Exception\CommandException;
@@ -57,12 +58,18 @@ class DefaultStateFetcher implements StateFetcherInterface
             if ($encryptionService->isContentValid($signatureHeader, $request->getRawBody(), )) {
                 $body = $request->body;
                 if (empty($body['state'])) {
-                    throw new CommandException("Webhook payload is signed but missing 'state' field.", );
+                    throw new CommandException(
+                        "Webhook payload is signed but missing 'state' field.",
+                        new LocalizedString("Webhook payload is signed but missing state."),
+                    );
                 }
                 return (string) $body['state'];
             }
 
-            throw new CommandException("Invalid webhook signature.", );
+            throw new CommandException(
+                "Invalid webhook signature: validation check failed.",
+                new LocalizedString("Invalid webhook signature."),
+            );
         }
 
         // Without a signature, fall back to the legacy path which retrieves the state from the API.
@@ -71,7 +78,10 @@ class DefaultStateFetcher implements StateFetcherInterface
 
         // The technical name of the entity must be present to select the correct SDK service.
         if (empty($technicalName)) {
-            throw new CommandException("Unsigned webhook payload missing 'listenerEntityTechnicalName'.", );
+            throw new CommandException(
+                "Unsigned webhook payload missing 'listenerEntityTechnicalName'.",
+                new LocalizedString("Webhook payload missing entity name."),
+            );
         }
 
         // Resolve the service class before the retry loop to avoid retrying unsupported entities.
@@ -94,7 +104,10 @@ class DefaultStateFetcher implements StateFetcherInterface
             }
         }
 
-        throw new CommandException("Failed to fetch state for entity $entityId after $maxRetries retries.", );
+        throw new CommandException(
+            "Failed to fetch state for entity '$technicalName' with ID $entityId after $maxRetries retries.",
+            new LocalizedString('Failed to fetch state for entity after maximum retries.'),
+        );
     }
 
     /**
@@ -154,7 +167,10 @@ class DefaultStateFetcher implements StateFetcherInterface
             'TransactionCompletion' => TransactionCompletionsService::class,
             'TransactionInvoice' => TransactionInvoicesService::class,
             'TransactionVoid' => TransactionVoidsService::class,
-            default => throw new CommandException("Legacy state fetching not supported for entity: " . $technicalName, ),
+            default => throw new CommandException(
+                "Legacy state fetching not supported for entity: " . $technicalName,
+                new LocalizedString('Legacy state fetching not supported for this entity type.'),
+            ),
         };
     }
 }

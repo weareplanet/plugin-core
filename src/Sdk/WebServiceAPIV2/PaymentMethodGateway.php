@@ -7,8 +7,9 @@ namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV2;
 use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethod;
+use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodCollection;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodGatewayInterface;
-use WeArePlanet\PluginCore\PaymentMethod\State;
+use WeArePlanet\PluginCore\Sdk\PaymentMethodMapperTrait;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
 use WeArePlanet\Sdk\Model\PaymentMethodConfiguration as SdkPaymentMethodConfiguration;
@@ -19,6 +20,8 @@ use WeArePlanet\Sdk\Service\PaymentMethodConfigurationsService as SdkPaymentMeth
  */
 class PaymentMethodGateway implements PaymentMethodGatewayInterface
 {
+    use PaymentMethodMapperTrait;
+
     /**
      * @param SdkProvider $provider The SDK provider.
      * @param LoggerInterface $logger The logger instance.
@@ -41,17 +44,25 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
             // V2: getPaymentMethodConfigurationsId($id, $space)
             $config = $service->getPaymentMethodConfigurationsId($id, $spaceId);
 
-            return $this->mapToEntity($config);
+            return $this->mapToPaymentMethod($config);
         } catch (\Throwable $e) {
-            $this->logger->error("PaymentMethodGateway: Failed to fetch payment method $id from SDK: {$e->getMessage()}");
-            throw new TransactionException("Payment method $id not found: {$e->getMessage()}", 0, $e);
+            $this->logger->error("PaymentMethodGateway: Failed to fetch payment method from SDK.", [
+                'paymentMethodId' => $id,
+                'spaceId' => $spaceId,
+                'exception' => $e,
+            ]);
+            throw new TransactionException(
+                "Payment method {$id} not found: {$e->getMessage()}",
+                new LocalizedString('Payment method not found.'),
+                $e,
+            );
         }
     }
 
     /**
      * @inheritDoc
      */
-    public function fetchBySpaceId(int $spaceId, ?string $state = null): array
+    public function fetchBySpaceId(int $spaceId, ?string $state = null): PaymentMethodCollection
     {
         try {
             /** @var SdkPaymentMethodConfigurationService $service */
@@ -73,29 +84,18 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
             $results = $service->getPaymentMethodConfigurationsSearch($spaceId, null, null, null, null, $query);
 
             $items = (is_object($results) && method_exists($results, 'getData')) ? $results->getData() : (array)$results;
-            return array_map(fn (SdkPaymentMethodConfiguration $config) => $this->mapToEntity($config), $items);
+            return new PaymentMethodCollection(...array_map([$this, 'mapToPaymentMethod'], $items));
         } catch (\Throwable $e) {
-            $this->logger->error("PaymentMethodGateway: Failed to fetch payment methods from SDK: {$e->getMessage()}");
-            throw new TransactionException("Unable to fetch payment methods: {$e->getMessage()}", 0, $e);
+            $this->logger->error("PaymentMethodGateway: Failed to fetch payment methods from SDK.", [
+                'spaceId' => $spaceId,
+                'exception' => $e,
+            ]);
+            throw new TransactionException(
+                "Unable to fetch payment methods: {$e->getMessage()}",
+                new LocalizedString('Unable to fetch payment methods.'),
+                $e,
+            );
         }
     }
 
-    /**
-     * Maps an SDK configuration to a domain entity.
-     *
-     * @param SdkPaymentMethodConfiguration $config The SDK configuration.
-     * @return PaymentMethod The domain entity.
-     */
-    private function mapToEntity(SdkPaymentMethodConfiguration $config): PaymentMethod
-    {
-        return new PaymentMethod(
-            id: (int) $config->getId(),
-            spaceId: (int) $config->getLinkedSpaceId(),
-            state: State::from((string) $config->getState()),
-            title: new LocalizedString($config->getResolvedTitle() ?? $config->getName()),
-            description: new LocalizedString($config->getResolvedDescription() ?? $config->getDescription()),
-            sortOrder: (int) $config->getSortOrder(),
-            imageUrl: $config->getResolvedImageUrl(),
-        );
-    }
 }

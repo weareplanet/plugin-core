@@ -17,7 +17,7 @@ use WeArePlanet\PluginCore\Transaction\TransactionService;
 // Force Payment Page Mode
 putenv('PLUGINCORE_DEMO_INTEGRATION_MODE=payment_page');
 
-// 1. Initialize Services via Bootstrap
+// Initialize Services via Bootstrap
 $common = require __DIR__ . '/../../examples/Common/bootstrap.php';
 
 $spaceId = $common['spaceId'];
@@ -27,7 +27,7 @@ $logger = $common['logger'];
 $settings = $common['settings'];
 $sdkProvider = $common['sdkProvider'];
 
-// 2. Services
+// Services
 // FilePersistence is now in Common, but we might want to use a local session file
 $persistence = new FilePersistence(__DIR__ . '/session.json');
 
@@ -36,7 +36,7 @@ $consistency = new LineItemConsistencyService($settings, $logger);
 
 $service = new TransactionService($gateway, $consistency, $logger);
 
-// 3. Load Session
+// Load Session
 try {
     $transactionId = TransactionIdLoader::load($argv);
 } catch (\RuntimeException $e) {
@@ -45,9 +45,9 @@ try {
 
 echo "Confirming Checkout for Transaction ID: $transactionId (Mode: Payment Page)\n";
 
-// 4. Generate URL
+// Generate URL
 try {
-    $paymentUrl = $service->getPaymentUrl((int)$spaceId, $transactionId);
+    $paymentUrl = $service->getPaymentUrl((int)$spaceId, $transactionId)->value;
 
     echo "\n---------------------------------------------------\n";
     echo "CHECKOUT READY\n";

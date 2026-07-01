@@ -11,9 +11,12 @@ use WeArePlanet\PluginCore\Transaction\State as TransactionState;
 use WeArePlanet\PluginCore\Webhook\Enum\WebhookListener;
 use WeArePlanet\PluginCore\Webhook\WebhookConfig;
 use WeArePlanet\PluginCore\Webhook\WebhookListener as WebhookListenerDto;
+use WeArePlanet\PluginCore\Webhook\WebhookListenerCollection;
 use WeArePlanet\PluginCore\Webhook\WebhookManagementGatewayInterface;
 use WeArePlanet\PluginCore\Webhook\WebhookService;
 use WeArePlanet\PluginCore\Webhook\WebhookSignatureGatewayInterface;
+use WeArePlanet\PluginCore\Webhook\WebhookUrl;
+use WeArePlanet\PluginCore\Webhook\WebhookUrlCollection;
 
 /**
  * Class WebhookServiceTest
@@ -50,15 +53,15 @@ class WebhookServiceTest extends TestCase
         $entityEnum = WebhookListener::TRANSACTION;
         $eventStates = ['active'];
         $name = 'Listener';
-        $expectedId = 100;
+        $expectedListener = new WebhookListenerDto(100, $name, $entityEnum->value, $eventStates);
 
         $this->managementGateway->expects($this->once())
             ->method('createListener')
             ->with($spaceId, $urlId, $entityEnum, $eventStates, $name)
-            ->willReturn($expectedId);
+            ->willReturn($expectedListener);
 
         $result = $this->service->createWebhookListener($spaceId, $urlId, $entityEnum, $eventStates, $name);
-        $this->assertEquals($expectedId, $result);
+        $this->assertSame($expectedListener, $result);
     }
 
     /**
@@ -69,15 +72,15 @@ class WebhookServiceTest extends TestCase
         $spaceId = 123;
         $url = 'https://example.com/webhook';
         $name = 'Test Webhook';
-        $expectedId = 99;
+        $expectedUrl = new WebhookUrl(99, $name, $url, 1);
 
         $this->managementGateway->expects($this->once())
             ->method('createUrl')
             ->with($spaceId, $url, $name)
-            ->willReturn($expectedId);
+            ->willReturn($expectedUrl);
 
         $result = $this->service->createWebhookUrl($spaceId, $url, $name);
-        $this->assertEquals($expectedId, $result);
+        $this->assertSame($expectedUrl, $result);
     }
 
     /**
@@ -119,13 +122,14 @@ class WebhookServiceTest extends TestCase
         $urlId = 99;
 
         // Use proper DTOs for the return value
-        $listener1 = new WebhookListenerDto(101, 'L1', 1, []);
-        $listener2 = new WebhookListenerDto(102, 'L2', 1, []);
+        $listener1 = new WebhookListenerDto(101, 'L1', 1, [], );
+        $listener2 = new WebhookListenerDto(102, 'L2', 1, [], );
+        $expectedCollection = new WebhookListenerCollection($listener1, $listener2, );
 
         $this->managementGateway->expects($this->once())
             ->method('getWebhookListeners')
-            ->with($spaceId, $urlId)
-            ->willReturn([$listener1, $listener2]);
+            ->with($spaceId, $urlId, )
+            ->willReturn($expectedCollection);
 
         // Expect deleteListener to be called twice with specific IDs
         $this->managementGateway->expects($this->exactly(2))
@@ -154,15 +158,16 @@ class WebhookServiceTest extends TestCase
     {
         $spaceId = 123;
         $state = 'INACTIVE';
-        $expectedUrls = [new \WeArePlanet\PluginCore\Webhook\WebhookUrl(1, 'Test', 'url', 1)];
+        $expectedUrls = [new WebhookUrl(1, 'Test', 'url', 1, ),];
+        $expectedCollection = new WebhookUrlCollection(...$expectedUrls, );
 
         $this->managementGateway->expects($this->once())
             ->method('getWebhookUrls')
-            ->with($spaceId, $state)
-            ->willReturn($expectedUrls);
+            ->with($spaceId, $state, )
+            ->willReturn($expectedCollection);
 
-        $result = $this->service->getWebhookUrls($spaceId, $state);
-        $this->assertSame($expectedUrls, $result);
+        $result = $this->service->getWebhookUrls($spaceId, $state, );
+        $this->assertSame($expectedCollection, $result, );
     }
 
     /**
@@ -181,18 +186,21 @@ class WebhookServiceTest extends TestCase
         $this->managementGateway->expects($this->once())
             ->method('createUrl')
             ->with($spaceId, $config->url, $config->name)
-            ->willReturn(99);
+            ->willReturn(new WebhookUrl(99, $config->name, $config->url, 1));
 
         // Updated expectation: pass enum object and array
         $this->managementGateway->expects($this->once())
             ->method('createListener')
             ->with($spaceId, 99, $config->entity, $config->eventStates, $config->name)
-            ->willReturn(100);
+            ->willReturn(new WebhookListenerDto(100, $config->name, $config->entity->value, $config->eventStates));
 
         $this->logger->expects($this->atLeastOnce())
             ->method('debug');
 
-        $this->service->installWebhook($spaceId, $config);
+        $result = $this->service->installWebhook($spaceId, $config);
+
+        $this->assertSame(99, $result->id);
+        $this->assertSame($config->url, $result->url);
     }
 
     /**
@@ -201,15 +209,16 @@ class WebhookServiceTest extends TestCase
     public function testListUrls(): void
     {
         $spaceId = 123;
-        $expectedUrls = [new \WeArePlanet\PluginCore\Webhook\WebhookUrl(1, 'Test', 'url', 1)];
+        $expectedUrls = [new WebhookUrl(1, 'Test', 'url', 1, ),];
+        $expectedCollection = new WebhookUrlCollection(...$expectedUrls, );
 
         $this->managementGateway->expects($this->once())
             ->method('getWebhookUrls')
-            ->with($spaceId, null)
-            ->willReturn($expectedUrls);
+            ->with($spaceId, null, )
+            ->willReturn($expectedCollection);
 
-        $result = $this->service->listUrls($spaceId);
-        $this->assertSame($expectedUrls, $result);
+        $result = $this->service->listUrls($spaceId, );
+        $this->assertSame($expectedCollection, $result, );
     }
 
     /**
@@ -233,9 +242,9 @@ class WebhookServiceTest extends TestCase
     }
 
     /**
-     * Test uninstallation flow when listener deletion fails.
+     * Test uninstallation flow when listener deletion fails propagates the exception.
      */
-    public function testUninstallWebhookListenerFailureStillDeletesUrl(): void
+    public function testUninstallWebhookListenerFailurePropagatesException(): void
     {
         $spaceId = 123;
         $urlId = 99;
@@ -245,9 +254,11 @@ class WebhookServiceTest extends TestCase
             ->method('deleteListener')
             ->willThrowException(new \Exception("Delete listener failed"));
 
-        $this->managementGateway->expects($this->once())
-            ->method('deleteUrl')
-            ->with($spaceId, $urlId);
+        // The URL must never be deleted because the exception is thrown before reaching that step.
+        $this->managementGateway->expects($this->never())
+            ->method('deleteUrl');
+
+        $this->expectException(\Exception::class);
 
         $this->service->uninstallWebhook($spaceId, $urlId, $listenerId);
     }
@@ -262,11 +273,16 @@ class WebhookServiceTest extends TestCase
         $entityEnum = WebhookListener::TRANSACTION;
         $eventStates = ['active'];
 
+        $expectedListener = new WebhookListenerDto($listenerId, 'Demo Listener', $entityEnum->value, $eventStates);
+
         $this->managementGateway->expects($this->once())
             ->method('updateListener')
-            ->with($spaceId, $listenerId, $entityEnum, $eventStates);
+            ->with($spaceId, $listenerId, $entityEnum, $eventStates)
+            ->willReturn($expectedListener);
 
-        $this->service->updateWebhookListener($spaceId, $listenerId, $entityEnum, $eventStates);
+        $result = $this->service->updateWebhookListener($spaceId, $listenerId, $entityEnum, $eventStates);
+
+        $this->assertSame($expectedListener, $result);
     }
 
     /**
@@ -278,11 +294,16 @@ class WebhookServiceTest extends TestCase
         $urlId = 99;
         $newUrl = 'https://example.com/new-url';
 
+        $expectedUrl = new WebhookUrl($urlId, 'Demo Webhook', $newUrl, 1);
+
         $this->managementGateway->expects($this->once())
             ->method('updateUrl')
-            ->with($spaceId, $urlId, $newUrl);
+            ->with($spaceId, $urlId, $newUrl)
+            ->willReturn($expectedUrl);
 
-        $this->service->updateWebhookUrl($spaceId, $urlId, $newUrl);
+        $result = $this->service->updateWebhookUrl($spaceId, $urlId, $newUrl);
+
+        $this->assertSame($expectedUrl, $result);
     }
 
     /**

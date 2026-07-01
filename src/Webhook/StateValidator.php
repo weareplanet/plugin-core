@@ -46,9 +46,9 @@ class StateValidator
      * Calculates the path of states that must be processed to reach the remote state.
      *
      * This method handles:
-     * 1. Stale webhooks: Returns null if the remote state is logically older than local.
-     * 2. Duplicate webhooks: Returns an empty array if states match.
-     * 3. Skipped states: Returns a list of intermediate states if a sequence is defined
+     * - Stale webhooks: Returns null if the remote state is logically older than local.
+     * - Duplicate webhooks: Returns an empty array if states match.
+     * - Skipped states: Returns a list of intermediate states if a sequence is defined
      *    (e.g. PENDING -> [AUTHORIZED, CAPTURED] -> FULFILLED).
      *
      * @param WebhookListener $listener The business entity context.

@@ -77,8 +77,6 @@ class Transaction
      */
     public ?LocalizedString $userFailureMessage = null;
 
-
-
     /**
      * @var Address|null The billing address.
      */

@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethod;
+use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodCollection;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodGatewayInterface;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodRepositoryInterface;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodService;
@@ -43,9 +44,9 @@ class PaymentMethodServiceTest extends TestCase
     public function testGetAvailableMethods(): void
     {
         $spaceId = 123;
-        $mockMethods = [
+        $mockMethods = new PaymentMethodCollection(
             $this->createPaymentMethod(id: 1, spaceId: $spaceId, name: 'Credit Card'),
-        ];
+        );
 
         $gateway = $this->createMock(PaymentMethodGatewayInterface::class);
         $gateway->expects($this->once())
@@ -72,9 +73,9 @@ class PaymentMethodServiceTest extends TestCase
     {
         $spaceId = 123;
         $state = 'active';
-        $mockMethods = [
+        $mockMethods = new PaymentMethodCollection(
             $this->createPaymentMethod(id: 1, spaceId: $spaceId, name: 'Credit Card'),
-        ];
+        );
 
         $gateway = $this->createMock(PaymentMethodGatewayInterface::class);
         $gateway->expects($this->once())
@@ -129,7 +130,7 @@ class PaymentMethodServiceTest extends TestCase
         $gateway->expects($this->once())
             ->method('fetchBySpaceId')
             ->with($spaceId)
-            ->willReturn([$methodA, $methodB]);
+            ->willReturn(new PaymentMethodCollection($methodA, $methodB));
 
         $repository = $this->createMock(PaymentMethodRepositoryInterface::class);
 
@@ -194,7 +195,7 @@ class PaymentMethodServiceTest extends TestCase
         $gateway = $this->createMock(PaymentMethodGatewayInterface::class);
         $gateway->expects($this->once())
             ->method('fetchBySpaceId')
-            ->willReturn([$method]);
+            ->willReturn(new PaymentMethodCollection($method));
 
         $repository = $this->createMock(PaymentMethodRepositoryInterface::class);
 
@@ -228,7 +229,7 @@ class PaymentMethodServiceTest extends TestCase
         $gateway->expects($this->once())
             ->method('fetchBySpaceId')
             ->with($spaceId)
-            ->willReturn([$methodOne, $methodTwo]);
+            ->willReturn(new PaymentMethodCollection($methodOne, $methodTwo));
 
         $repository = $this->createMock(PaymentMethodRepositoryInterface::class);
 
@@ -270,7 +271,7 @@ class PaymentMethodServiceTest extends TestCase
         $gateway = $this->createMock(PaymentMethodGatewayInterface::class);
         $gateway->expects($this->once())
             ->method('fetchBySpaceId')
-            ->willReturn([$method]);
+            ->willReturn(new PaymentMethodCollection($method));
 
         $repository = $this->createMock(PaymentMethodRepositoryInterface::class);
 
@@ -285,7 +286,12 @@ class PaymentMethodServiceTest extends TestCase
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->once())
             ->method('info')
-            ->with($this->stringContains('1 skipped'));
+            ->with(
+                'Payment method sync completed.',
+                $this->callback(function (array $context): bool {
+                    return isset($context['skipped']) && $context['skipped'] === 1;
+                }),
+            );
 
         $service = new PaymentMethodService($gateway, $repository, $logger);
         $service->synchronize($spaceId);
@@ -302,7 +308,7 @@ class PaymentMethodServiceTest extends TestCase
         $gateway = $this->createMock(PaymentMethodGatewayInterface::class);
         $gateway->expects($this->once())
             ->method('fetchBySpaceId')
-            ->willReturn([$method]);
+            ->willReturn(new PaymentMethodCollection($method));
 
         $repository = $this->createMock(PaymentMethodRepositoryInterface::class);
 

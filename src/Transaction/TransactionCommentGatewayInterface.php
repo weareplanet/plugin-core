@@ -11,7 +11,7 @@ interface TransactionCommentGatewayInterface
      *
      * @param int $spaceId The space ID.
      * @param int $transactionId The transaction ID.
-     * @return TransactionComment[] The list of comments.
+     * @return TransactionCommentCollection The list of comments.
      */
-    public function getComments(int $spaceId, int $transactionId): array;
+    public function getComments(int $spaceId, int $transactionId): TransactionCommentCollection;
 }

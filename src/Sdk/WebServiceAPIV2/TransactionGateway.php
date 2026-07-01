@@ -9,7 +9,9 @@ use WeArePlanet\PluginCore\LineItem\LineItem;
 use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethod;
+use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodCollection;
 use WeArePlanet\PluginCore\PaymentMethod\State as PaymentMethodState;
+use WeArePlanet\PluginCore\Sdk\PaymentMethodMapperTrait;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Sdk\TransactionMapperTrait;
 use WeArePlanet\PluginCore\Settings\IntegrationMode as IntegrationModeEnum;
@@ -18,8 +20,10 @@ use WeArePlanet\PluginCore\Tax\Tax;
 use WeArePlanet\PluginCore\Token\State as TokenState;
 use WeArePlanet\PluginCore\Token\Token;
 use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
+use WeArePlanet\PluginCore\Transaction\PaymentUrl;
 use WeArePlanet\PluginCore\Transaction\State as StateEnum;
 use WeArePlanet\PluginCore\Transaction\Transaction;
+use WeArePlanet\PluginCore\Transaction\TransactionCollection;
 use WeArePlanet\PluginCore\Transaction\TransactionContext;
 use WeArePlanet\PluginCore\Transaction\TransactionGatewayInterface;
 use WeArePlanet\PluginCore\Transaction\TransactionSearchCriteria;
@@ -41,6 +45,7 @@ use WeArePlanet\Sdk\Service\TransactionsService as SdkTransactionsService;
 
 class TransactionGateway implements TransactionGatewayInterface
 {
+    use PaymentMethodMapperTrait;
     use TransactionMapperTrait;
 
     private SdkPaymentMethodConfigurationsService $paymentMethodConfigService;
@@ -109,8 +114,15 @@ class TransactionGateway implements TransactionGatewayInterface
 
             return $this->mapToTransaction($sdkTransaction);
         } catch (\Throwable $e) {
-            $this->logger->error("Gateway: Failed to create transaction: {$e->getMessage()}");
-            throw new TransactionException("Unable to create transaction: {$e->getMessage()}", 0, $e);
+            $this->logger->error("Gateway: Failed to create transaction.", [
+                'spaceId' => $context->spaceId,
+                'exception' => $e,
+            ]);
+            throw new TransactionException(
+                "Unable to create transaction: {$e->getMessage()}",
+                new LocalizedString('Unable to create transaction.'),
+                $e,
+            );
         }
     }
 
@@ -146,33 +158,52 @@ class TransactionGateway implements TransactionGatewayInterface
 
     public function get(int $spaceId, int $transactionId): Transaction
     {
-        $this->logger->debug("Gateway: Reading transaction $transactionId from Space $spaceId.");
+        $this->logger->debug("Gateway: Reading transaction.", [
+            'transactionId' => $transactionId,
+            'spaceId' => $spaceId,
+        ]);
 
         try {
             $sdkTransaction = $this->transactionsService->getPaymentTransactionsId($transactionId, $spaceId, ['billingAddress', 'shippingAddress', 'lineItems', 'token']);
             $result = $this->mapToTransaction($sdkTransaction);
 
-            $this->logger->debug("Gateway: Transaction state is " . $result->state->value);
+            $this->logger->debug("Gateway: Transaction read.", [
+                'transactionId' => $transactionId,
+                'spaceId' => $spaceId,
+                'state' => $result->state->value,
+            ]);
 
             return $result;
         } catch (\Throwable $e) {
-            $this->logger->error("Gateway: Failed to read transaction: {$e->getMessage()}");
-            throw new TransactionException("Unable to read transaction: {$e->getMessage()}", 0, $e);
+            $this->logger->error("Gateway: Failed to read transaction.", [
+                'transactionId' => $transactionId,
+                'spaceId' => $spaceId,
+                'exception' => $e,
+            ]);
+            throw new TransactionException(
+                "Unable to read transaction {$transactionId} in space {$spaceId}: {$e->getMessage()}",
+                new LocalizedString('Unable to read transaction.'),
+                $e,
+            );
         }
     }
 
-    public function getAvailablePaymentMethods(int $spaceId, int $transactionId): array
+    public function getAvailablePaymentMethods(int $spaceId, int $transactionId): PaymentMethodCollection
     {
         $mode = $this->settings->getIntegrationMode()->value;
-        $this->logger->debug("Gateway: Fetching payment methods for mode $mode.");
+        $this->logger->debug("Gateway: Fetching payment methods.", [
+            'mode' => $mode,
+            'transactionId' => $transactionId,
+            'spaceId' => $spaceId,
+        ]);
 
         // V2: getPaymentTransactionsIdPaymentMethodConfigurations
         $sdkResults = $this->transactionsService->getPaymentTransactionsIdPaymentMethodConfigurations($transactionId, $mode, $spaceId);
         $items = (is_object($sdkResults) && method_exists($sdkResults, 'getData')) ? $sdkResults->getData() : (array)$sdkResults;
-        return array_map([$this, 'mapToPaymentMethod'], $items);
+        return new PaymentMethodCollection(...array_map([$this, 'mapToPaymentMethod'], $items));
     }
 
-    public function getPaymentMethodConfigurations(int $spaceId): array
+    public function getPaymentMethodConfigurations(int $spaceId): PaymentMethodCollection
     {
         // Search for active payment method configurations using the V2 query syntax.
         $query = "state:ACTIVE";
@@ -180,21 +211,35 @@ class TransactionGateway implements TransactionGatewayInterface
         try {
             $results = $this->paymentMethodConfigService->getPaymentMethodConfigurationsSearch($spaceId, null, null, null, null, $query);
             $items = (is_object($results) && method_exists($results, 'getData')) ? $results->getData() : (array)$results;
-            $this->logger->debug(sprintf("Gateway: Fetched %d payment method configurations.", count($items)));
+            $this->logger->debug("Gateway: Fetched payment method configurations.", [
+                'count' => count($items),
+                'spaceId' => $spaceId,
+            ]);
 
-            return array_map([$this, 'mapToPaymentMethod'], $items);
+            return new PaymentMethodCollection(...array_map([$this, 'mapToPaymentMethod'], $items));
         } catch (\Throwable $e) {
-            $this->logger->error("Gateway: Failed to fetch PMC: {$e->getMessage()}");
-            return [];
+            $this->logger->error("Gateway: Failed to fetch payment method configurations.", [
+                'spaceId' => $spaceId,
+                'exception' => $e,
+            ]);
+            throw new TransactionException(
+                "Gateway: Failed to fetch payment method configurations: " . $e->getMessage(),
+                new LocalizedString('Failed to fetch payment method configurations.'),
+                $e,
+            );
         }
     }
 
-    public function getPaymentUrl(int $spaceId, int $transactionId): string
+    public function getPaymentUrl(int $spaceId, int $transactionId): PaymentUrl
     {
         $mode = $this->settings->getIntegrationMode();
-        $this->logger->debug("Gateway: Fetching payment URL for mode {$mode->value}.");
+        $this->logger->debug("Gateway: Fetching payment URL.", [
+            'mode' => $mode->value,
+            'transactionId' => $transactionId,
+            'spaceId' => $spaceId,
+        ]);
 
-        return match ($mode) {
+        $url = match ($mode) {
             IntegrationModeEnum::PAYMENT_PAGE => $this->transactionsService
                 ->getPaymentTransactionsIdPaymentPageUrl($transactionId, $spaceId),
 
@@ -204,6 +249,8 @@ class TransactionGateway implements TransactionGatewayInterface
             IntegrationModeEnum::LIGHTBOX => $this->transactionsService
                 ->getPaymentTransactionsIdLightboxJavascriptUrl($transactionId, $spaceId),
         };
+
+        return new PaymentUrl($url);
     }
 
     private function mapAddress(Address $source): SdkAddressCreate
@@ -285,22 +332,10 @@ class TransactionGateway implements TransactionGatewayInterface
         return $sdkTaxCreate;
     }
 
-    private function mapToPaymentMethod(SdkPaymentMethodConfiguration $sdkPaymentMethodConfiguration): PaymentMethod
-    {
-        return new PaymentMethod(
-            id: (int) $sdkPaymentMethodConfiguration->getId(),
-            spaceId: (int) $sdkPaymentMethodConfiguration->getLinkedSpaceId(),
-            state: PaymentMethodState::from((string) $sdkPaymentMethodConfiguration->getState()),
-            title: new LocalizedString($sdkPaymentMethodConfiguration->getResolvedTitle() ?? $sdkPaymentMethodConfiguration->getName()),
-            description: new LocalizedString($sdkPaymentMethodConfiguration->getResolvedDescription() ?? $sdkPaymentMethodConfiguration->getDescription()),
-            sortOrder: (int) $sdkPaymentMethodConfiguration->getSortOrder(),
-            imageUrl: $sdkPaymentMethodConfiguration->getResolvedImageUrl(),
-        );
-    }
 
-    public function search(int $spaceId, TransactionSearchCriteria $criteria): array
+    public function search(int $spaceId, TransactionSearchCriteria $criteria): TransactionCollection
     {
-        $this->logger->debug("Gateway: Searching transactions in Space $spaceId.");
+        $this->logger->debug("Gateway: Searching transactions.", ['spaceId' => $spaceId]);
 
         // V2 Search: Build query string
         $queryParts = [];
@@ -326,10 +361,17 @@ class TransactionGateway implements TransactionGatewayInterface
         try {
             $results = $this->transactionsService->getPaymentTransactionsSearch($spaceId, null, $criteria->limit, null, $order, $queryString);
             $items = (is_object($results) && method_exists($results, 'getData')) ? $results->getData() : (array)$results;
-            return array_map([$this, 'mapToTransaction'], $items);
+            return new TransactionCollection(...array_map([$this, 'mapToTransaction'], $items));
         } catch (\Throwable $e) {
-            $this->logger->error("Gateway: Failed to search transactions: {$e->getMessage()}");
-            throw new TransactionException("Unable to search transactions: {$e->getMessage()}", 0, $e);
+            $this->logger->error("Gateway: Failed to search transactions.", [
+                'spaceId' => $spaceId,
+                'exception' => $e,
+            ]);
+            throw new TransactionException(
+                "Unable to search transactions: {$e->getMessage()}",
+                new LocalizedString('Unable to search transactions.'),
+                $e,
+            );
         }
     }
 
@@ -367,8 +409,16 @@ class TransactionGateway implements TransactionGatewayInterface
 
             return $this->mapToTransaction($sdkTransaction);
         } catch (\Throwable $e) {
-            $this->logger->error("Gateway: Failed to update transaction: {$e->getMessage()}");
-            throw new TransactionException("Unable to update transaction: {$e->getMessage()}", 0, $e);
+            $this->logger->error("Gateway: Failed to update transaction.", [
+                'transactionId' => $transactionId,
+                'spaceId' => $context->spaceId,
+                'exception' => $e,
+            ]);
+            throw new TransactionException(
+                "Unable to update transaction {$transactionId} in space {$context->spaceId}: {$e->getMessage()}",
+                new LocalizedString('Unable to update transaction.'),
+                $e,
+            );
         }
     }
 }

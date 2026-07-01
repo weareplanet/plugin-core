@@ -19,7 +19,7 @@ $paymentMethodService = new PaymentMethodService($gateway, $logger);
 $paymentMethods = $paymentMethodService->getPaymentMethods($spaceId);
 
 foreach ($paymentMethods as $paymentMethod) {
-    echo "Payment Method: " . $paymentMethod->name . " (ID: " . $paymentMethod->id . ")\n";
+    echo "Payment Method: " . $paymentMethod->title->getDefault() . " (ID: " . $paymentMethod->id . ")\n";
 }
 ```
 

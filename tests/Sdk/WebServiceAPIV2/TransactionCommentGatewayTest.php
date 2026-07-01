@@ -57,9 +57,9 @@ class TransactionCommentGatewayTest extends TestCase
         $comments = $this->gateway->getComments($spaceId, $transactionId);
 
         $this->assertCount(1, $comments);
-        $this->assertEquals(999, $comments[0]->id);
-        $this->assertEquals('Test Comment', $comments[0]->content);
-        $this->assertEquals($now->getTimestamp(), $comments[0]->createdOn->getTimestamp());
+        $this->assertEquals(999, $comments->all()[0]->id);
+        $this->assertEquals('Test Comment', $comments->all()[0]->content);
+        $this->assertEquals($now->getTimestamp(), $comments->all()[0]->createdOn->getTimestamp());
     }
 
     public function testGetCommentsThrowsExceptionOnError(): void

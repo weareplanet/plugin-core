@@ -161,10 +161,10 @@ class TransactionGatewayTest extends TestCase
             ->with($transactionId, 'iframe', $spaceId)
             ->willReturn($response);
 
-        $results = $this->gateway->getAvailablePaymentMethods($spaceId, $transactionId);
+        $results = $this->gateway->getAvailablePaymentMethods($spaceId, $transactionId, );
 
-        $this->assertCount(1, $results);
-        $this->assertEquals(55, $results[0]->id);
+        $this->assertCount(1, $results, );
+        $this->assertEquals(55, $results->first()->id, );
     }
 
     public function testFetchPaymentMethodConfigurationsMapsCorrectly(): void
@@ -187,10 +187,10 @@ class TransactionGatewayTest extends TestCase
             ->with($spaceId, null, null, null, null, $query)
             ->willReturn([$sdkItem1]);
 
-        $results = $this->gateway->getPaymentMethodConfigurations($spaceId);
+        $results = $this->gateway->getPaymentMethodConfigurations($spaceId, );
 
-        $this->assertCount(1, $results);
-        $this->assertEquals(10, $results[0]->id);
+        $this->assertCount(1, $results, );
+        $this->assertEquals(10, $results->first()->id, );
     }
 
     #[DataProvider('integrationModeProvider')]

@@ -40,5 +40,5 @@ The `TransactionContext` DTO is the sole source of truth.
 **Why:** The Service does not fetch data from the database or the cart. It relies entirely on the Context provided by the controller. This ensures the Service is pure, side-effect free (regarding data fetching), and highly testable.
 
 ### 3. Integration Mode Abstraction
-The Service exposes a single `getPaymentUrl()` method.
+The Service exposes a single `getPaymentUrl()` method, which returns a strictly typed `PaymentUrl` value object (read `->value` for the raw URL string).
 **Why:** The consumer (Controller) does not need to know which specific SDK service (`PaymentPage`, `Iframe`, or `Lightbox`) is being used. This logic is encapsulated within the Gateway based on the `Settings` injection.

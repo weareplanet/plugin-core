@@ -10,6 +10,8 @@ use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\WebhookManagementGateway;
 use WeArePlanet\PluginCore\Webhook\Enum\WebhookListener as WebhookListenerEnum;
+use WeArePlanet\PluginCore\Webhook\WebhookListener;
+use WeArePlanet\PluginCore\Webhook\WebhookUrl;
 use WeArePlanet\Sdk\Model\CreationEntityState as SdkCreationEntityState;
 use WeArePlanet\Sdk\Model\WebhookListener as SdkWebhookListener;
 use WeArePlanet\Sdk\Model\WebhookListenerCreate as SdkWebhookListenerCreate;
@@ -52,6 +54,9 @@ class WebhookManagementGatewayTest extends TestCase
 
         $sdkUrl = new SdkWebhookUrl();
         $sdkUrl->setId(100);
+        $sdkUrl->setName($name);
+        $sdkUrl->setUrl($url);
+        $sdkUrl->setState(SdkCreationEntityState::ACTIVE);
 
         // V2: postWebhooksUrls($space, $create)
         $this->urlService->expects($this->once())
@@ -63,9 +68,12 @@ class WebhookManagementGatewayTest extends TestCase
             }))
             ->willReturn($sdkUrl);
 
-        $id = $this->gateway->createUrl($spaceId, $url, $name);
+        $result = $this->gateway->createUrl($spaceId, $url, $name);
 
-        $this->assertEquals(100, $id);
+        $this->assertInstanceOf(WebhookUrl::class, $result);
+        $this->assertSame(100, $result->id);
+        $this->assertSame($name, $result->name);
+        $this->assertSame($url, $result->url);
     }
 
     public function testCreateListener(): void
@@ -79,6 +87,9 @@ class WebhookManagementGatewayTest extends TestCase
 
         $sdkListener = new SdkWebhookListener();
         $sdkListener->setId(200);
+        $sdkListener->setName($name);
+        $sdkListener->setEntity($entityId);
+        $sdkListener->setEntityStates([$stateId]);
 
         // V2: postWebhooksListeners($space, $create)
         $this->listenerService->expects($this->once())
@@ -91,9 +102,12 @@ class WebhookManagementGatewayTest extends TestCase
             }))
             ->willReturn($sdkListener);
 
-        $id = $this->gateway->createListener($spaceId, $urlId, $entityEnum, [$stateId], $name);
+        $result = $this->gateway->createListener($spaceId, $urlId, $entityEnum, [$stateId], $name);
 
-        $this->assertEquals(200, $id);
+        $this->assertInstanceOf(WebhookListener::class, $result);
+        $this->assertSame(200, $result->id);
+        $this->assertSame($name, $result->name);
+        $this->assertSame([$stateId], $result->entityStates);
     }
 
     public function testUpdateUrl(): void
@@ -108,6 +122,12 @@ class WebhookManagementGatewayTest extends TestCase
         $currentUrl->setName('Test Webhook');
         $currentUrl->setState(SdkCreationEntityState::ACTIVE);
 
+        $updatedUrl = new SdkWebhookUrl();
+        $updatedUrl->setId($id);
+        $updatedUrl->setName('Test Webhook');
+        $updatedUrl->setUrl($newUrl);
+        $updatedUrl->setState(SdkCreationEntityState::ACTIVE);
+
         // V2: getWebhooksUrlsId
         $this->urlService->expects($this->once())->method('getWebhooksUrlsId')->with($id, $spaceId)->willReturn($currentUrl);
 
@@ -119,9 +139,14 @@ class WebhookManagementGatewayTest extends TestCase
                     $update->getUrl() === $newUrl &&
                     $update->getVersion() === 1 &&
                     $update->getState() === SdkCreationEntityState::ACTIVE;
-            }));
+            }))
+            ->willReturn($updatedUrl);
 
-        $this->gateway->updateUrl($spaceId, $id, $newUrl);
+        $result = $this->gateway->updateUrl($spaceId, $id, $newUrl);
+
+        $this->assertInstanceOf(WebhookUrl::class, $result);
+        $this->assertSame($id, $result->id);
+        $this->assertSame($newUrl, $result->url);
     }
 
     public function testUpdateListener(): void
@@ -135,6 +160,12 @@ class WebhookManagementGatewayTest extends TestCase
         $currentListener->setId($id);
         $currentListener->setVersion(20);
 
+        $updatedListener = new SdkWebhookListener();
+        $updatedListener->setId($id);
+        $updatedListener->setName('Updated Listener');
+        $updatedListener->setEntity($entityEnum->value);
+        $updatedListener->setEntityStates([$newState]);
+
         // V2: getWebhooksListenersId
         $this->listenerService->expects($this->once())->method('getWebhooksListenersId')->with($id, $spaceId)->willReturn($currentListener);
 
@@ -144,9 +175,14 @@ class WebhookManagementGatewayTest extends TestCase
             ->with($this->equalTo($id), $this->equalTo($spaceId), $this->callback(function (SdkWebhookListenerUpdate $update) use ($id, $newState) {
                 return $update->getEntityStates() === [$newState] &&
                     $update->getVersion() === 20;
-            }));
+            }))
+            ->willReturn($updatedListener);
 
-        $this->gateway->updateListener($spaceId, $id, $entityEnum, [$newState]);
+        $result = $this->gateway->updateListener($spaceId, $id, $entityEnum, [$newState]);
+
+        $this->assertInstanceOf(WebhookListener::class, $result);
+        $this->assertSame($id, $result->id);
+        $this->assertSame([$newState], $result->entityStates);
     }
 
     public function testDeleteUrl(): void
@@ -178,9 +214,9 @@ class WebhookManagementGatewayTest extends TestCase
             ->with($spaceId, null, 100, null, null, "url.id:$urlId")
             ->willReturn([$listener]);
 
-        $results = $this->gateway->getWebhookListeners($spaceId, $urlId);
+        $results = $this->gateway->getWebhookListeners($spaceId, $urlId, );
 
-        $this->assertCount(1, $results);
-        $this->assertEquals(200, $results[0]->id); // Access property directly on DTO
+        $this->assertCount(1, $results, );
+        $this->assertEquals(200, $results->first()->id, ); // Access property directly on DTO
     }
 }

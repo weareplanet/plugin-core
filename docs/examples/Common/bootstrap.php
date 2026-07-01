@@ -15,7 +15,7 @@ require_once __DIR__ . '/EnvSettingsProvider.php';
 require_once __DIR__ . '/FilePersistence.php';
 require_once __DIR__ . '/TransactionIdLoader.php';
 
-// 1. Credentials Check
+// Credentials Check
 $spaceId = getenv('PLUGINCORE_DEMO_SPACE_ID');
 $userId = getenv('PLUGINCORE_DEMO_USER_ID');
 $apiSecret = getenv('PLUGINCORE_DEMO_API_SECRET');
@@ -26,7 +26,7 @@ if (!$spaceId || !$userId || !$apiSecret) {
     exit(1);
 }
 
-// 2. Initialize Services
+// Initialize Services
 $logger = new SimpleLogger();
 
 $settingsProvider = new EnvSettingsProvider();

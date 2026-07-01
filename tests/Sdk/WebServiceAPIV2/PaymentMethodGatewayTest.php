@@ -101,7 +101,7 @@ class PaymentMethodGatewayTest extends TestCase
         $results = $this->gateway->fetchBySpaceId($spaceId);
 
         $this->assertCount(1, $results);
-        $this->assertInstanceOf(PaymentMethod::class, $results[0]);
-        $this->assertEquals(11, $results[0]->id);
+        $this->assertInstanceOf(PaymentMethod::class, $results->all()[0]);
+        $this->assertEquals(11, $results->all()[0]->id);
     }
 }

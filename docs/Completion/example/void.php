@@ -12,7 +12,7 @@ use WeArePlanet\PluginCore\Settings\Settings;
 use WeArePlanet\PluginCore\Transaction\Completion\TransactionCompletionService;
 use WeArePlanet\PluginCore\Examples\Common\TransactionIdLoader;
 
-// 1. Initialize Services via Bootstrap
+// Initialize Services via Bootstrap
 $common = require __DIR__ . '/../../examples/Common/bootstrap.php';
 
 $spaceId = $common['spaceId'];
@@ -22,18 +22,18 @@ $logger = $common['logger'];
 $settings = $common['settings'];
 $sdkProvider = $common['sdkProvider'];
 
-// 2. Load Transaction ID
+// Load Transaction ID
 try {
     $transactionId = TransactionIdLoader::load($argv);
 } catch (\Exception $e) {
     exit(1);
 }
 
-// 3. Setup Services
+// Setup Services
 $gateway = new TransactionCompletionGateway($sdkProvider);
 $service = new TransactionCompletionService($gateway, $logger);
 
-// 4. Void Transaction
+// Void Transaction
 try {
     echo "Voiding Transaction $transactionId..." . PHP_EOL;
     $void = $service->void((int)$spaceId, $transactionId);

@@ -6,9 +6,9 @@ namespace WeArePlanet\Example;
  * Document Retrieval Example
  *
  * This script demonstrates how to retrieve:
- * 1. Invoice PDF
- * 2. Packing Slip PDF
- * 3. Refund Credit Note PDF (if a refund exists)
+ * Invoice PDF
+ * Packing Slip PDF
+ * Refund Credit Note PDF (if a refund exists)
  *
  * USAGE:
  * php download_documents.php [session_file_or_dir] [transaction_id]
@@ -29,7 +29,7 @@ use WeArePlanet\PluginCore\Settings\Settings;
 use WeArePlanet\PluginCore\Transaction\TransactionService;
 use WeArePlanet\PluginCore\Examples\Common\TransactionIdLoader;
 
-// 1. Initialize Services via Bootstrap
+// Initialize Services via Bootstrap
 $common = require __DIR__ . '/../../examples/Common/bootstrap.php';
 
 $spaceId = $common['spaceId'];
@@ -39,7 +39,7 @@ $logger = $common['logger'];
 $settings = $common['settings'];
 $sdkProvider = $common['sdkProvider'];
 
-// 2. Load Transaction ID
+// Load Transaction ID
 try {
     $transactionId = TransactionIdLoader::load($argv);
 } catch (\Exception $e) {
@@ -48,7 +48,7 @@ try {
 
 echo "Operating on Transaction ID: $transactionId\n";
 
-// 3. Setup Services
+// Setup Services
 $documentGateway = new DocumentGateway($sdkProvider, $logger);
 $documentService = new DocumentService($documentGateway);
 
@@ -100,7 +100,7 @@ function saveDocument(string $name, string $data, string $mimeType, string $dire
     echo "Saved $name to: " . $filename . "\n";
 }
 
-// 4. Retrieve Invoice
+// Retrieve Invoice
 try {
     echo "\n--- Fetching Invoice ---\n";
     $invoice = $documentService->getInvoice((int)$spaceId, (int)$transactionId);
@@ -110,7 +110,7 @@ try {
     echo "FAILED to get Invoice: " . $e->getMessage() . "\n";
 }
 
-// 5. Retrieve Packing Slip
+// Retrieve Packing Slip
 try {
     echo "\n--- Fetching Packing Slip ---\n";
     $packingSlip = $documentService->getPackingSlip((int)$spaceId, (int)$transactionId);
@@ -120,7 +120,7 @@ try {
     echo "FAILED to get Packing Slip: " . $e->getMessage() . "\n";
 }
 
-// 6. Retrieve Refund Credit Note
+// Retrieve Refund Credit Note
 // We first need to find if there are any refunds for this transaction.
 try {
     echo "\n--- Fetching Refund Credit Note ---\n";
@@ -136,8 +136,8 @@ try {
     // Use PluginCore RefundService to find refunds
     $refunds = $refundService->getRefunds((int)$spaceId, (int)$transactionId);
 
-    if (!empty($refunds) && count($refunds) > 0) {
-        $refund = $refunds[0];
+    if (!$refunds->isEmpty()) {
+        $refund = $refunds->first();
         $refundId = $refund->id;
         echo "Found Refund ID: $refundId\n";
 

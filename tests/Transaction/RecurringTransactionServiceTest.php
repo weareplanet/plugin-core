@@ -12,7 +12,7 @@ use WeArePlanet\PluginCore\Transaction\RecurringTransactionService;
 use WeArePlanet\PluginCore\Transaction\Transaction;
 use WeArePlanet\PluginCore\Transaction\TransactionContext;
 use WeArePlanet\PluginCore\Transaction\TransactionService;
-use WeArePlanet\PluginCore\Token\TokenService;
+use WeArePlanet\PluginCore\Token\Exception\MissingTokenException;
 use WeArePlanet\PluginCore\Token\Token;
 use WeArePlanet\PluginCore\Address\Address;
 
@@ -21,19 +21,16 @@ class RecurringTransactionServiceTest extends TestCase
     private RecurringTransactionService $service;
     private MockObject|TransactionService $transactionService;
     private MockObject|RecurringTransactionGatewayInterface $gateway;
-    private MockObject|TokenService $tokenService;
     private MockObject|LoggerInterface $logger;
 
     protected function setUp(): void
     {
         $this->transactionService = $this->createMock(TransactionService::class);
         $this->gateway = $this->createMock(RecurringTransactionGatewayInterface::class);
-        $this->tokenService = $this->createMock(TokenService::class);
         $this->logger = $this->createMock(LoggerInterface::class);
         $this->service = new RecurringTransactionService(
             $this->transactionService,
             $this->gateway,
-            $this->tokenService,
             $this->logger,
         );
     }
@@ -68,9 +65,6 @@ class RecurringTransactionServiceTest extends TestCase
             ->with($spaceId, $transactionId)
             ->willReturn($originalTransaction);
 
-        $this->tokenService->expects($this->never())
-            ->method('createTokenForTransaction');
-
         $this->transactionService->expects($this->once())
             ->method('createTransaction')
             ->with($this->callback(function (TransactionContext $context) use ($spaceId, $token, $address) {
@@ -94,7 +88,7 @@ class RecurringTransactionServiceTest extends TestCase
     }
 
     /**
-     * Verifies that a clear RuntimeException is thrown when the original
+     * Verifies that a clear MissingTokenException is thrown when the original
      * transaction has no token. Recurring payments require the original
      * transaction to have been created with tokenizationMode = FORCE_CREATION.
      */
@@ -122,17 +116,14 @@ class RecurringTransactionServiceTest extends TestCase
             ->with($spaceId, $transactionId)
             ->willReturn($originalTransaction);
 
-        // No token creation, no transaction creation, no gateway call
-        $this->tokenService->expects($this->never())
-            ->method('createTokenForTransaction');
-
+        // No transaction creation, no gateway call
         $this->transactionService->expects($this->never())
             ->method('createTransaction');
 
         $this->gateway->expects($this->never())
             ->method('processRecurringPayment');
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(MissingTokenException::class);
         $this->expectExceptionMessage('tokenizationMode = FORCE_CREATION');
 
         $this->service->processRecurringPayment($spaceId, $transactionId);

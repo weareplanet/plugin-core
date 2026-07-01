@@ -53,7 +53,10 @@ class RecurringTransactionGateway implements RecurringTransactionGatewayInterfac
      */
     public function processRecurringPayment(int $spaceId, int $transactionId): Transaction
     {
-        $this->logger->debug("Processing recurring payment via token (ID: $transactionId).");
+        $this->logger->debug("Processing recurring payment via token.", [
+            'transactionId' => $transactionId,
+            'spaceId' => $spaceId,
+        ]);
 
         try {
             // V2: processWithToken charges the transaction using the token's stored
@@ -63,7 +66,9 @@ class RecurringTransactionGateway implements RecurringTransactionGatewayInterfac
                 $spaceId,
             );
 
-            $this->logger->debug("Charge completed for Transaction $transactionId.", [
+            $this->logger->debug("Charge completed.", [
+                'transactionId' => $transactionId,
+                'spaceId' => $spaceId,
                 'chargeState' => (string) $sdkCharge->getState(),
             ]);
 
@@ -75,7 +80,11 @@ class RecurringTransactionGateway implements RecurringTransactionGatewayInterfac
 
             return $this->mapToTransaction($sdkTransaction);
         } catch (\Exception $e) {
-            $this->logger->error("Failed to process recurring payment for Transaction $transactionId: " . $e->getMessage());
+            $this->logger->error("Failed to process recurring payment.", [
+                'transactionId' => $transactionId,
+                'spaceId' => $spaceId,
+                'exception' => $e,
+            ]);
             throw $e;
         }
     }

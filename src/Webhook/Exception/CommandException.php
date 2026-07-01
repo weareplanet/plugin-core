@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Webhook\Exception;
 
+use WeArePlanet\PluginCore\SharedKernel\AbstractDomainException;
+
 /**
  * Base exception for errors that occur during a webhook command execution.
  */
-class CommandException extends \Exception
+class CommandException extends AbstractDomainException
 {
-    public function __construct(string $message = "", ?\Throwable $previous = null)
-    {
-        parent::__construct($message, 0, $previous);
-    }
 }

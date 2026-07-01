@@ -41,7 +41,7 @@ echo "  Usage: php index.php [--debug]\n";
 echo "========================================\n\n";
 
 
-// 1. Initialize Services
+// Initialize Services
 $settingsProvider = new MyExampleSettingsProvider();
 $settings = new Settings($settingsProvider);
 $sdkProvider = new SdkProvider($settings);
@@ -52,7 +52,7 @@ $stateFetcher = new ExampleStateFetcher();
 $registry = new WebhookListenerRegistry();
 $validator = new StateValidator();
 
-// 2. Register Listeners
+// Register Listeners
 // Transaction Listener (Handles multiple states via internal routing)
 $txListener = new TransactionListener($logger);
 $txStates = ['CREATE', 'PENDING', 'CONFIRMED', 'PROCESSING', 'AUTHORIZED', 'COMPLETED', 'FULFILL'];
@@ -64,7 +64,7 @@ foreach ($txStates as $state) {
 $rfListener = new RefundListener($logger);
 $registry->addListener(WebhookListener::REFUND, 'SUCCESSFUL', $rfListener);
 
-// 3. Create Processor
+// Create Processor
 $processor = new WebhookProcessor($registry, $validator, $lifecycleHandler, $stateFetcher, $logger);
 
 // --- Scenario 1: Transaction Happy Path ---
@@ -112,10 +112,6 @@ function create_mock_request(string $technicalName, string $state, int $entityId
         'entityId' => $entityId,
         'spaceId' => 12345,
     ];
-    $reflection = new \ReflectionClass(Request::class);
-    $constructor = $reflection->getConstructor();
-    $constructor->setAccessible(true);
-    $request = $reflection->newInstanceWithoutConstructor();
-    $constructor->invoke($request, [], $mockBody, json_encode($mockBody));
-    return $request;
+    // Use the public factory instead of reflection to build a Request from raw data.
+    return Request::create([], $mockBody, json_encode($mockBody));
 }
