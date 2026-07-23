@@ -30,6 +30,7 @@ trait ValidatesStateTransitions
         $allowedTransitions = $transitions[$this->value] ?? [];
         return in_array($nextState->value, $allowedTransitions, true);
     }
+
     /**
      * Defines the valid state transitions.
      * The key is the 'from' state, and the value is an array of valid 'to' states.
@@ -38,4 +39,26 @@ trait ValidatesStateTransitions
      * @return array<string, mixed>
      */
     abstract public static function getTransitionMap(): array;
+
+    /**
+     * Whether this state has not yet reached a final, resolved outcome.
+     */
+    public function isPending(): bool
+    {
+        return !$this->isTerminal();
+    }
+
+    /**
+     * Whether this is a final, resolved state.
+     *
+     * Derived from the transition map's 'final' list, so it stays in sync
+     * with {@see canTransitionTo()} automatically for every state enum that
+     * uses this trait.
+     */
+    public function isTerminal(): bool
+    {
+        $finalStates = self::getTransitionMap()['final'] ?? [];
+
+        return in_array($this->value, $finalStates, true);
+    }
 }

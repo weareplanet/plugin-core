@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\PaymentMethod;
 
 use WeArePlanet\PluginCore\Localization\LocalizedString;
-use WeArePlanet\PluginCore\Render\JsonStringableTrait;
+use WeArePlanet\PluginCore\SharedKernel\JsonStringableTrait;
 
 /**
  * Domain entity representing a Payment Method.

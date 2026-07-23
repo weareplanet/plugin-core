@@ -6,16 +6,34 @@ This is commonly used for subscription renewals or unscheduled subsequent charge
 
 ### Core Concepts
 
-**1. Process Without User Interaction**
+**1. Tokenization at Checkout (Prerequisite)**
+The original transaction **must** be created with `tokenizationMode = FORCE_CREATION`. This tells the API to automatically generate a token with the customer's stored payment credentials when the payment completes. Without this, there is no token to charge against, and a token cannot be created retroactively after the fact.
+
+**2. Process Without User Interaction**
 The recurring payment process triggers a charge attempt on a previously successful transaction. It uses the payment information linked to that transaction.
 
-**2. The Recurring Gateway**
+**3. The Recurring Gateway**
 The logic is encapsulated in the `RecurringTransactionGatewayInterface`. This interface exposes a specific method for processing recurring charges: `processRecurringPayment`.
 
-**3. Token and Billing Address Requirements**
+**4. Token and Billing Address Requirements**
 For a recurring payment to succeed, a valid payment token and billing address must be present on the original transaction. Following the Fail Fast approach, the service throws a domain exception with both a technical message and a localized reason: a `MissingTokenException` (in `WeArePlanet\PluginCore\Token\Exception`) when the token is missing, and a `TransactionException` (in `WeArePlanet\PluginCore\Transaction\Exception`) when the billing address is missing.
 
+> [!IMPORTANT]
+> Recurring payments will **fail** if the original transaction was not created with tokenization enabled. The error message will indicate that no token exists.
+
 ### Integration Guide
+
+#### Step 0: Enable Tokenization at Checkout
+
+When creating the original transaction, set `tokenizationMode`:
+
+```php
+use WeArePlanet\PluginCore\Token\TokenizationMode as TokenizationModeEnum;
+
+$context = new TransactionContext();
+// ... set other fields ...
+$context->tokenizationMode = TokenizationModeEnum::FORCE_CREATION;
+```
 
 #### Step 1: Configure the Service
 
@@ -39,36 +57,19 @@ For a recurring payment to succeed, a valid payment token and billing address mu
 
 #### Step 2: Execute Recurring Payment
 
- The recurring payment is triggered using the original transaction ID and the space ID. If a token was not created during checkout, you must manually create it using the `TokenService` first.
+ The recurring payment is triggered using the original transaction ID and the space ID.
 
  ```php
- use WeArePlanet\PluginCore\Token\TokenService;
- use WeArePlanet\PluginCore\Token\Exception\TokenException;
- use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TokenGateway;
-
- $tokenGateway = new TokenGateway($sdkProvider, $logger);
- $tokenService = new TokenService($tokenGateway, $logger);
-
  try {
-     // If the original transaction has no token, create one. On failure this now
-     // throws a TokenException carrying the gateway's localized rejection reason
-     // (it no longer fails silently by returning null).
-     $transaction = $transactionService->getTransaction($spaceId, $originalTransactionId);
-     if ($transaction->token === null) {
-         $transaction->token = $tokenService->createTokenForTransaction($spaceId, $originalTransactionId);
-     }
-
      // Perform the recurring charge
      $newTransaction = $recurringService->processRecurringPayment($spaceId, $originalTransactionId);
 
      echo "Recurring payment processed! New Transaction ID: " . $newTransaction->id;
 
-     // A recurring charge may resolve to FAILED; the localized failure reason is now preserved.
+     // A recurring charge may resolve to FAILED; the localized failure reason is preserved.
      if ($newTransaction->failureReason !== null) {
          echo "Failure reason: " . $newTransaction->failureReason->localize('en-US');
      }
- } catch (TokenException $e) {
-     $logger->error("Token creation failed: " . ($e->getLocalizedMessage()?->localize('en-US') ?? $e->getMessage()));
  } catch (\Throwable $e) {
      $logger->error("Recurring payment failed: " . $e->getMessage());
  }
@@ -86,6 +87,10 @@ sequenceDiagram
     PluginCore->>WeArePlanetAPI: readTransaction(originalId)
     WeArePlanetAPI-->>PluginCore: Original Transaction
 
+    alt No Token Found
+        PluginCore-->>Scheduler: Error: tokenizationMode was not enabled at checkout
+    end
+
     PluginCore->>WeArePlanetAPI: createTransaction(context)
     WeArePlanetAPI-->>PluginCore: New Transaction
 
@@ -99,10 +104,10 @@ sequenceDiagram
 A working example is provided in the `example` directory.
 
 > [!IMPORTANT]
-> The recurring payment example relies on a transaction that has already been authorized. You should run the Checkout examples first, complete the payment in your browser, and then run the recurring script.
+> The recurring payment example requires a transaction that was created **with tokenization enabled** and has already been paid. You must run the Checkout examples first to create such a transaction.
 
-1. **Start Checkout**: Run `docs/Checkout/example/1_start_checkout.php`.
-2. **Confirm & Pay**: Run `docs/Checkout/example/3_confirm_checkout.php` and follow the link to pay.
+1. **Start Checkout**: Run `docs/Checkout/example/1_start_checkout.php` (includes `FORCE_CREATION` tokenization).
+2. **Confirm & Pay**: Run one of the `docs/Checkout/example/3_confirm_*.php` scripts matching your integration mode (e.g. `3_confirm_manual.php`) and follow the link to pay.
 3. **Trigger Recurring**: Run `docs/Recurring/example/recurring.php`.
     * This script automatically detects the active session from the Checkout example.
     * Alternatively, you can pass the transaction ID manually:

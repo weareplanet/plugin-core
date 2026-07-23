@@ -68,6 +68,12 @@ Demonstrates the use of `renderJs()` and `getMetadata()` to build a custom check
 php 3_confirm_custom_ui.php
 ```
 
+#### E. Manual / Server-Side Confirmation (No Widget)
+For backend/MOTO orders or other flows where no payment widget is ever rendered, confirms the transaction directly server-to-server via `TransactionGatewayInterface::confirm()`. Unlike A–D, this does not open a browser — it prints the result to the console.
+```bash
+php 3_confirm_manual.php [transaction_id]
+```
+
 
 ---
 

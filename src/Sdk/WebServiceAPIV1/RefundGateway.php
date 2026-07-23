@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV1;
 
+use WeArePlanet\PluginCore\LineItem\LineItemCollection;
 use WeArePlanet\PluginCore\Localization\LocalizedString;
+use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
+use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Refund\Exception\RefundException;
 use WeArePlanet\PluginCore\Refund\Refund;
@@ -14,7 +17,9 @@ use WeArePlanet\PluginCore\Refund\RefundGatewayInterface;
 use WeArePlanet\PluginCore\Refund\State as StateEnum;
 use WeArePlanet\PluginCore\Sdk\DateTimeMapperTrait;
 use WeArePlanet\PluginCore\Sdk\FailureReasonMapperTrait;
+use WeArePlanet\PluginCore\Sdk\LineItemMapperTrait;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
+use WeArePlanet\Sdk\Http\ConnectionException;
 use WeArePlanet\Sdk\Model\CriteriaOperator as SdkCriteriaOperator;
 use WeArePlanet\Sdk\Model\EntityQuery as SdkEntityQuery;
 use WeArePlanet\Sdk\Model\EntityQueryFilter as SdkEntityQueryFilter;
@@ -25,18 +30,50 @@ use WeArePlanet\Sdk\Model\RefundCreate as SdkRefundCreate;
 use WeArePlanet\Sdk\Model\RefundType as SdkRefundType;
 use WeArePlanet\Sdk\Service\RefundService as SdkRefundService;
 
+#[LogContext(domain: 'refund')]
 class RefundGateway implements RefundGatewayInterface
 {
     use DateTimeMapperTrait;
+    use DomainLoggerTrait;
     use FailureReasonMapperTrait;
+    use LineItemMapperTrait;
 
     private SdkRefundService $sdkRefundService;
 
     public function __construct(
         private readonly SdkProvider $sdkProvider,
-        private readonly LoggerInterface $logger,
+        LoggerInterface $logger,
     ) {
+        $this->initializeLogger($logger);
         $this->sdkRefundService = $this->sdkProvider->getService(SdkRefundService::class);
+    }
+
+    public function findById(int $spaceId, int $refundId): Refund
+    {
+        $this->logger->debug("Reading refund.", [
+            'refundId' => $refundId,
+            'spaceId' => $spaceId,
+        ]);
+
+        try {
+            $sdkRefund = $this->sdkRefundService->read($spaceId, $refundId);
+            return $this->mapToRefund($sdkRefund, (int)$sdkRefund->getTransaction()->getId());
+        } catch (\Throwable $e) {
+            $this->logger->error(
+                'Failed to read refund: {errorMessage}',
+                [
+                    'errorMessage' => $e->getMessage(),
+                    'exception' => $e,
+                    'refundId' => $refundId,
+                    'spaceId' => $spaceId,
+                ],
+            );
+            throw new RefundException(
+                "Failed to read refund {$refundId}: " . $e->getMessage(),
+                new LocalizedString('An error occurred while retrieving the refund.'),
+                $e,
+            );
+        }
     }
 
     public function findByTransaction(int $spaceId, int $transactionId): RefundCollection
@@ -100,6 +137,18 @@ class RefundGateway implements RefundGatewayInterface
         $refund->createdOn = $this->toDateTimeImmutable($sdkRefund->getCreatedOn());
         $refund->failedOn = $this->toDateTimeImmutable($sdkRefund->getFailedOn());
 
+        // The SDK's line items carry the reductions applied by this refund.
+        $sdkLineItems = $sdkRefund->getLineItems();
+        if (!empty($sdkLineItems)) {
+            $refund->lineItems = new LineItemCollection(...array_map([$this, 'mapToLineItem'], $sdkLineItems));
+        }
+
+        // The reduced line items carry the post-refund cart state.
+        $sdkReducedLineItems = $sdkRefund->getReducedLineItems();
+        if (!empty($sdkReducedLineItems)) {
+            $refund->reducedLineItems = new LineItemCollection(...array_map([$this, 'mapToLineItem'], $sdkReducedLineItems));
+        }
+
         return $refund;
     }
 
@@ -125,12 +174,12 @@ class RefundGateway implements RefundGatewayInterface
                 default => SdkRefundType::MERCHANT_INITIATED_ONLINE,
             });
 
-            if (!empty($context->lineItems)) {
+            if (!$context->lineItems->isEmpty()) {
                 $sdkReductions = [];
                 foreach ($context->lineItems as $item) {
-                    $uniqueId = $item['uniqueId'] ?? null;
-                    $qty = (float)($item['quantity'] ?? 0);
-                    $amt = (float)($item['amount'] ?? 0);
+                    $uniqueId = $item->uniqueId;
+                    $qty = $item->returnedQuantity;
+                    $amt = $item->unitPriceReduction;
 
                     $this->logger->debug("Adding refund line item reduction.", [
                         'uniqueId' => $uniqueId,
@@ -168,11 +217,18 @@ class RefundGateway implements RefundGatewayInterface
                 'spaceId' => $spaceId,
                 'exception' => $e,
             ]);
-            throw new RefundException(
+            $exception = new RefundException(
                 "Unable to process refund: {$e->getMessage()}",
                 new LocalizedString('An error occurred while processing the refund.'),
                 $e,
             );
+
+            // A connection error is transient; retrying the same refund request is expected to succeed.
+            if ($e instanceof ConnectionException) {
+                $exception->withRetryable(true);
+            }
+
+            throw $exception;
         }
     }
 

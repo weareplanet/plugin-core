@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV1;
 
+use WeArePlanet\PluginCore\Localization\LocalizedString;
+use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
+use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
+use WeArePlanet\PluginCore\PaymentMethod\Exception\PaymentMethodException;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethod;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodCollection;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodGatewayInterface;
@@ -20,8 +24,10 @@ use WeArePlanet\Sdk\Service\PaymentMethodConfigurationService as SdkPaymentMetho
 /**
  * Gateway implementation using the SDK.
  */
+#[LogContext(domain: 'sync')]
 class PaymentMethodGateway implements PaymentMethodGatewayInterface
 {
+    use DomainLoggerTrait;
     use PaymentMethodMapperTrait;
 
     /**
@@ -30,8 +36,9 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
      */
     public function __construct(
         private readonly SdkProvider $provider,
-        private readonly LoggerInterface $logger,
+        LoggerInterface $logger,
     ) {
+        $this->initializeLogger($logger);
     }
 
     /**
@@ -64,13 +71,17 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
             $config = $service->read($spaceId, $id);
 
             return $this->mapToPaymentMethod($config);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $this->logger->error('Failed to fetch payment method from SDK.', [
                 'paymentMethodId' => $id,
                 'spaceId' => $spaceId,
                 'exception' => $e,
             ]);
-            throw new \RuntimeException(sprintf('Payment method %d not found.', $id), 0, $e);
+            throw new PaymentMethodException(
+                sprintf('Payment method %d not found.', $id),
+                new LocalizedString('The payment method could not be retrieved.'),
+                $e,
+            );
         }
     }
 
@@ -96,12 +107,16 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
             $results = $service->search($spaceId, $query);
 
             return new PaymentMethodCollection(...array_map([$this, 'mapToPaymentMethod'], $results));
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $this->logger->error('Failed to fetch payment methods from SDK.', [
                 'spaceId' => $spaceId,
                 'exception' => $e,
             ]);
-            throw $e;
+            throw new PaymentMethodException(
+                'Failed to fetch payment methods: ' . $e->getMessage(),
+                new LocalizedString('The payment methods could not be retrieved.'),
+                $e,
+            );
         }
     }
 

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\Transaction\Completion;
 
 use WeArePlanet\PluginCore\Localization\LocalizedString;
+use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
+use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
 use WeArePlanet\PluginCore\Transaction\Void\TransactionVoid;
@@ -12,12 +14,15 @@ use WeArePlanet\PluginCore\Transaction\Void\TransactionVoid;
 /**
  * Service for handling transaction completions (Capture, Void).
  */
-readonly class TransactionCompletionService
+#[LogContext(domain: 'transaction', subdomain: 'completion')]
+class TransactionCompletionService
 {
+    use DomainLoggerTrait;
     public function __construct(
-        private TransactionCompletionGatewayInterface $completionGateway,
-        private LoggerInterface $logger,
+        private readonly TransactionCompletionGatewayInterface $completionGateway,
+        LoggerInterface $logger,
     ) {
+        $this->initializeLogger($logger);
     }
 
     /**

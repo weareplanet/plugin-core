@@ -6,21 +6,27 @@ namespace WeArePlanet\PluginCore\Webhook;
 
 use WeArePlanet\PluginCore\Http\Request;
 use WeArePlanet\PluginCore\Localization\LocalizedString;
+use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
+use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Webhook\Enum\WebhookListener as WebhookListenerEnum;
 use WeArePlanet\PluginCore\Webhook\Exception\CommandException;
 use WeArePlanet\PluginCore\Webhook\Exception\SkippedStepException;
+use WeArePlanet\PluginCore\Webhook\Exception\TransientWebhookException;
 use WeArePlanet\PluginCore\Webhook\Listener\WebhookListenerRegistry;
 
+#[LogContext(domain: 'webhook')]
 class WebhookProcessor
 {
+    use DomainLoggerTrait;
     public function __construct(
         private readonly WebhookListenerRegistry $listenerRegistry,
         private readonly StateValidator $stateValidator,
         private readonly WebhookLifecycleHandler $lifecycleHandler,
         private readonly StateFetcherInterface $stateFetcher,
-        private readonly LoggerInterface $logger,
+        LoggerInterface $logger,
     ) {
+        $this->initializeLogger($logger);
     }
 
     /**
@@ -170,6 +176,22 @@ class WebhookProcessor
 
         } catch (\InvalidArgumentException $e) {
             $this->logger->warning('Webhook validation failed.', ['exception' => $e]);
+        } catch (TransientWebhookException $e) {
+            // Transient Failure Hook: same recovery as the generic handler, but
+            // the consumer told us this is a temporary, self-healing state
+            // (e.g. lock contention), so we log at info severity instead of error.
+            if ($context && $webhookListener) {
+                $this->lifecycleHandler->onFailure($webhookListener, $context, $e);
+            }
+            $this->logger->info('Webhook processing delayed: transient condition (will be retried).', ['exception' => $e]);
+
+            // Still re-throw as CommandException so the entry-point returns a
+            // 5xx and the portal retries the delivery.
+            throw new CommandException(
+                "Webhook command execution failed for entity {$entityId} with listener {$technicalName} under space {$spaceId}.",
+                new LocalizedString('Webhook command execution failed.'),
+                $e,
+            );
         } catch (\Throwable $e) {
             // Global Failure Hook: Ensures that even if the business logic crashes,
             // we roll back the DB and release any distributed locks to prevent deadlocks.

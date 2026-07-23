@@ -6,6 +6,7 @@ namespace WeArePlanet\PluginCore\Tests\Sdk\WebServiceAPIV1;
 
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
+use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TransactionCompletionGateway;
 use WeArePlanet\PluginCore\Transaction\Completion\State;
@@ -39,7 +40,7 @@ class TransactionCompletionGatewayTest extends TestCase
                 [SdkTransactionVoidService::class, $this->voidService],
             ]);
 
-        $this->gateway = new TransactionCompletionGateway($this->sdkProvider);
+        $this->gateway = new TransactionCompletionGateway($this->sdkProvider, $this->createMock(LoggerInterface::class));
     }
 
     public function testCaptureMapsFailureReason(): void

@@ -10,6 +10,22 @@ enum State: string
 {
     use ValidatesStateTransitions;
 
+    /**
+     * Whether an in-progress capture should be blocked because a prior
+     * invoice for this transaction has not yet been resolved.
+     *
+     * OPEN and OVERDUE both represent an unresolved invoice. PAID, CANCELED,
+     * DERECOGNIZED, and NOT_APPLICABLE are all resolved outcomes, after
+     * which a subsequent capture is safe to proceed.
+     */
+    public function blocksCapture(): bool
+    {
+        return match ($this) {
+            self::OPEN, self::OVERDUE => true,
+            default => false,
+        };
+    }
+
     public static function getTransitionMap(): array
     {
         return [

@@ -4,20 +4,24 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Token;
 
-use Psr\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Localization\LocalizedString;
+use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
+use WeArePlanet\PluginCore\Log\LogContext;
+use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Token\Exception\TokenException;
-use WeArePlanet\Sdk\ApiException;
 
 /**
  * Service for managing tokens.
  */
+#[LogContext(domain: 'transaction', subdomain: 'recurring')]
 class TokenService
 {
+    use DomainLoggerTrait;
     public function __construct(
         private TokenGatewayInterface $tokenGateway,
-        private LoggerInterface $logger,
+        LoggerInterface $logger,
     ) {
+        $this->initializeLogger($logger);
     }
 
     /**
@@ -42,18 +46,15 @@ class TokenService
                 'spaceId' => $spaceId,
             ]);
             return $token;
-        } catch (ApiException $e) {
+        } catch (TokenException $e) {
+            // Already a domain exception from the gateway; log and pass through.
             $this->logger->error("Failed to create token for transaction.", [
                 'transactionId' => $transactionId,
                 'spaceId' => $spaceId,
                 'exception' => $e,
             ]);
-            throw new TokenException(
-                "Failed to create token for Transaction $transactionId: " . $e->getMessage(),
-                new LocalizedString('Token creation failed. Please try again or contact support.'),
-                $e,
-            );
-        } catch (\Exception $e) {
+            throw $e;
+        } catch (\Throwable $e) {
             $this->logger->error("Unexpected error creating token for transaction.", [
                 'transactionId' => $transactionId,
                 'spaceId' => $spaceId,

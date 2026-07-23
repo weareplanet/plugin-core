@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\Webhook;
 
 use WeArePlanet\PluginCore\Localization\LocalizedString;
+use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
+use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Webhook\Enum\WebhookListener as WebhookListenerEnum;
 use WeArePlanet\PluginCore\Webhook\Exception\CommandException;
@@ -15,8 +17,10 @@ use WeArePlanet\PluginCore\Webhook\Listener\WebhookListenerRegistry;
  *
  * Domain service for managing webhook subscriptions and validating payloads.
  */
+#[LogContext(domain: 'webhook')]
 class WebhookService
 {
+    use DomainLoggerTrait;
     /**
      * WebhookService constructor.
      *
@@ -27,8 +31,9 @@ class WebhookService
     public function __construct(
         private readonly WebhookManagementGatewayInterface $managementGateway,
         private readonly WebhookSignatureGatewayInterface $signatureGateway,
-        private readonly LoggerInterface $logger,
+        LoggerInterface $logger,
     ) {
+        $this->initializeLogger($logger);
     }
 
     /**
@@ -266,6 +271,10 @@ class WebhookService
         $urlId = $this->getOrCreateWebhookUrl($spaceId, $url, $namePrefix);
         $existingListeners = $this->getWebhookListeners($spaceId, $urlId);
 
+        $created = 0;
+        $recreated = 0;
+        $skipped = 0;
+
         foreach ($registry->getAllListeners() as $entityValue => $stateMap) {
             $entity = WebhookListenerEnum::from((int)$entityValue);
             $states = array_keys($stateMap);
@@ -273,9 +282,13 @@ class WebhookService
             $existing = $this->findListenerForEntity($entity, $existingListeners);
             if ($existing !== null) {
                 if (!$force) {
+                    $skipped++;
                     continue;
                 }
                 $this->deleteWebhookListener($spaceId, $existing->id);
+                $recreated++;
+            } else {
+                $created++;
             }
 
             $this->createWebhookListener(
@@ -287,6 +300,14 @@ class WebhookService
                 $registry->getNotifyEveryChange($entity),
             );
         }
+
+        $this->logger->info("Webhook sync completed.", [
+            'spaceId' => $spaceId,
+            'url' => $url,
+            'created' => $created,
+            'recreated' => $recreated,
+            'skipped' => $skipped,
+        ]);
     }
 
     /**

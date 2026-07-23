@@ -8,15 +8,21 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use WeArePlanet\PluginCore\Address\Address;
+use WeArePlanet\PluginCore\Customer\PersonalDetails;
 use WeArePlanet\PluginCore\LineItem\LineItem;
+use WeArePlanet\PluginCore\LineItem\LineItemCollection;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\TransactionGateway;
 use WeArePlanet\PluginCore\Settings\IntegrationMode;
 use WeArePlanet\PluginCore\Settings\Settings;
+use WeArePlanet\PluginCore\SharedKernel\Url;
+use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
 use WeArePlanet\PluginCore\Transaction\TransactionContext;
 use WeArePlanet\Sdk\ApiException;
+use WeArePlanet\Sdk\Http\ConnectionException;
 use WeArePlanet\Sdk\Model\FailureReason as SdkFailureReason;
+use WeArePlanet\Sdk\Model\LineItem as SdkLineItemResponse;
 use WeArePlanet\Sdk\Model\LineItemType as SdkLineItemType;
 use WeArePlanet\Sdk\Model\PaymentMethodConfiguration as SdkConfiguration;
 use WeArePlanet\Sdk\Model\Transaction as SdkTransaction;
@@ -27,6 +33,7 @@ use WeArePlanet\Sdk\Service\TransactionIframeService as SdkTransactionIframeServ
 use WeArePlanet\Sdk\Service\TransactionLightboxService as SdkTransactionLightboxService;
 use WeArePlanet\Sdk\Service\TransactionPaymentPageService as SdkTransactionPaymentPageService;
 use WeArePlanet\Sdk\Service\TransactionService as SdkTransactionService;
+use WeArePlanet\Sdk\VersioningException;
 
 class TransactionGatewayTest extends TestCase
 {
@@ -36,6 +43,21 @@ class TransactionGatewayTest extends TestCase
     private MockObject|SdkProvider $sdkProvider;
     private MockObject|SdkTransactionService $sdkTransactionService;
     private MockObject|Settings $settings;
+
+    private function buildMinimalContext(): TransactionContext
+    {
+        $context = new TransactionContext();
+        $context->spaceId = 123;
+        $context->merchantReference = 'UPDATE-TEST';
+        $context->currencyCode = 'CHF';
+        $context->language = 'en-US';
+        $context->customerId = 'CUST-1';
+        $context->billingAddress = new Address();
+        $context->billingAddress->city = 'Winterthur';
+        $context->billingAddress->country = 'CH';
+
+        return $context;
+    }
 
     /**
      * @return array<string, array{0: IntegrationMode, 1: class-string, 2: string}>
@@ -84,6 +106,45 @@ class TransactionGatewayTest extends TestCase
     }
 
     /**
+     * Verifies that a line item's discountIncludingTax is mapped onto the
+     * SDK line item when set.
+     */
+    public function testCreateTransactionMapsDiscountIncludingTaxWhenSet(): void
+    {
+        $context = $this->buildMinimalContext();
+        $context->personalDetails = new PersonalDetails(emailAddress: 'test@example.com');
+
+        $item = new LineItem();
+        $item->uniqueId = 'SKU-1';
+        $item->sku = 'SKU-1';
+        $item->name = 'Discounted Product';
+        $item->quantity = 1.0;
+        $item->amountIncludingTax = 90.00;
+        $item->discountIncludingTax = 10.00;
+
+        $context->lineItems = new LineItemCollection($item);
+
+        $sdkTx = new SdkTransaction();
+        $sdkTx->setId(778);
+        $sdkTx->setLinkedSpaceId(123);
+        $sdkTx->setVersion(1);
+        $sdkTx->setState(SdkTransactionState::PENDING);
+
+        $this->sdkTransactionService->expects($this->once())
+            ->method('create')
+            ->with(
+                $this->equalTo(123),
+                $this->callback(function (SdkTransactionCreate $create) {
+                    $items = $create->getLineItems();
+                    return count($items) === 1 && $items[0]->getDiscountIncludingTax() === 10.00;
+                }),
+            )
+            ->willReturn($sdkTx);
+
+        $this->gateway->create($context);
+    }
+
+    /**
      * Verifies that line item types are correctly mapped to SDK types.
      */
     public function testCreateTransactionMapsLineItemType(): void
@@ -93,13 +154,13 @@ class TransactionGatewayTest extends TestCase
         $context->merchantReference = 'MAPPING-TEST';
         $context->currencyCode = 'CHF';
         $context->language = 'en-US';
-        $context->successUrl = 'http://success';
-        $context->failedUrl = 'http://failed';
+        $context->successUrl = new Url('http://success');
+        $context->failedUrl = new Url('http://failed');
         $context->customerId = 'CUST-1';
         $context->billingAddress = new Address();
-        $context->billingAddress->emailAddress = 'test@example.com';
         $context->billingAddress->city = 'Winterthur';
         $context->billingAddress->country = 'CH';
+        $context->personalDetails = new PersonalDetails(emailAddress: 'test@example.com');
 
         $item = new LineItem();
         $item->uniqueId = 'SI-1';
@@ -109,7 +170,7 @@ class TransactionGatewayTest extends TestCase
         $item->amountIncludingTax = 10.00;
         $item->type = LineItem::TYPE_SHIPPING;
 
-        $context->lineItems = [$item];
+        $context->lineItems = new LineItemCollection($item);
 
         $sdkTx = new SdkTransaction();
         $sdkTx->setId(777);
@@ -125,6 +186,44 @@ class TransactionGatewayTest extends TestCase
                 $this->callback(function (SdkTransactionCreate $create) {
                     $items = $create->getLineItems();
                     return count($items) === 1 && $items[0]->getType() === SdkLineItemType::SHIPPING;
+                }),
+            )
+            ->willReturn($sdkTx);
+
+        $this->gateway->create($context);
+    }
+
+    /**
+     * Verifies that discountIncludingTax is omitted from the SDK line item
+     * when not set, rather than being sent as an explicit null.
+     */
+    public function testCreateTransactionOmitsDiscountIncludingTaxWhenNull(): void
+    {
+        $context = $this->buildMinimalContext();
+        $context->personalDetails = new PersonalDetails(emailAddress: 'test@example.com');
+
+        $item = new LineItem();
+        $item->uniqueId = 'SKU-1';
+        $item->sku = 'SKU-1';
+        $item->name = 'Regular Product';
+        $item->quantity = 1.0;
+        $item->amountIncludingTax = 100.00;
+
+        $context->lineItems = new LineItemCollection($item);
+
+        $sdkTx = new SdkTransaction();
+        $sdkTx->setId(779);
+        $sdkTx->setLinkedSpaceId(123);
+        $sdkTx->setVersion(1);
+        $sdkTx->setState(SdkTransactionState::PENDING);
+
+        $this->sdkTransactionService->expects($this->once())
+            ->method('create')
+            ->with(
+                $this->equalTo(123),
+                $this->callback(function (SdkTransactionCreate $create) {
+                    $items = $create->getLineItems();
+                    return count($items) === 1 && $items[0]->getDiscountIncludingTax() === null;
                 }),
             )
             ->willReturn($sdkTx);
@@ -266,22 +365,40 @@ class TransactionGatewayTest extends TestCase
         $this->assertEquals($now->getTimestamp(), $transaction->failedOn->getTimestamp());
     }
 
-    public function testFindRethrowsApiExceptionOn500(): void
+    /**
+     * Verifies that a line item's discountIncludingTax is mapped back onto
+     * the domain LineItem when reading a transaction.
+     */
+    public function testFindMapsLineItemDiscountIncludingTax(): void
     {
         $spaceId = 123;
         $transactionId = 456;
 
+        $sdkLineItem = new SdkLineItemResponse();
+        $sdkLineItem->setUniqueId('SKU-1');
+        $sdkLineItem->setSku('SKU-1');
+        $sdkLineItem->setName('Discounted Product');
+        $sdkLineItem->setQuantity(1.0);
+        $sdkLineItem->setAmountIncludingTax(90.00);
+        $sdkLineItem->setUnitPriceIncludingTax(90.00);
+        $sdkLineItem->setDiscountIncludingTax(10.00);
+        $sdkLineItem->setType(SdkLineItemType::PRODUCT);
+
+        $sdkTransaction = new SdkTransaction();
+        $sdkTransaction->setId($transactionId);
+        $sdkTransaction->setVersion(1);
+        $sdkTransaction->setState(SdkTransactionState::AUTHORIZED);
+        $sdkTransaction->setLinkedSpaceId($spaceId);
+        $sdkTransaction->setLineItems([$sdkLineItem]);
+
         $this->sdkTransactionService->expects($this->once())
             ->method('read')
             ->with($spaceId, $transactionId)
-            ->willThrowException(new ApiException('Internal Server Error', 500));
+            ->willReturn($sdkTransaction);
 
-        $this->logger->expects($this->once())
-            ->method('error')
-            ->with($this->stringContains('Gateway: Failed to find transaction'));
+        $transaction = $this->gateway->find($spaceId, $transactionId);
 
-        $this->expectException(ApiException::class);
-        $this->gateway->find($spaceId, $transactionId);
+        $this->assertSame(10.00, $transaction->lineItems[0]->discountIncludingTax);
     }
 
     public function testFindReturnsNullOn404ApiException(): void
@@ -300,5 +417,62 @@ class TransactionGatewayTest extends TestCase
 
         $result = $this->gateway->find($spaceId, $transactionId);
         $this->assertNull($result);
+    }
+
+    public function testFindWrapsApiExceptionOn500(): void
+    {
+        $spaceId = 123;
+        $transactionId = 456;
+
+        $this->sdkTransactionService->expects($this->once())
+            ->method('read')
+            ->with($spaceId, $transactionId)
+            ->willThrowException(new ApiException('Internal Server Error', 500));
+
+        $this->logger->expects($this->once())
+            ->method('error')
+            ->with($this->stringContains('Gateway: Failed to find transaction'));
+
+        $this->expectException(TransactionException::class);
+        $this->gateway->find($spaceId, $transactionId);
+    }
+
+    public function testUpdateDoesNotMarkGenericFailureAsRetryable(): void
+    {
+        $this->sdkTransactionService->method('update')
+            ->willThrowException(new \RuntimeException('Something else went wrong.'));
+
+        try {
+            $this->gateway->update(456, 1, $this->buildMinimalContext());
+            $this->fail('Expected a TransactionException to be thrown.');
+        } catch (TransactionException $e) {
+            $this->assertFalse($e->isRetryable());
+        }
+    }
+
+    public function testUpdateMarksConnectionExceptionAsRetryable(): void
+    {
+        $this->sdkTransactionService->method('update')
+            ->willThrowException(new ConnectionException());
+
+        try {
+            $this->gateway->update(456, 1, $this->buildMinimalContext());
+            $this->fail('Expected a TransactionException to be thrown.');
+        } catch (TransactionException $e) {
+            $this->assertTrue($e->isRetryable());
+        }
+    }
+
+    public function testUpdateMarksVersionConflictAsRetryable(): void
+    {
+        $this->sdkTransactionService->method('update')
+            ->willThrowException(new VersioningException('/transaction/update'));
+
+        try {
+            $this->gateway->update(456, 1, $this->buildMinimalContext());
+            $this->fail('Expected a TransactionException to be thrown.');
+        } catch (TransactionException $e) {
+            $this->assertTrue($e->isRetryable());
+        }
     }
 }

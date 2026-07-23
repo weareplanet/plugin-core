@@ -32,7 +32,7 @@ try {
 }
 
 // Setup the required services for transaction completion.
-$gateway = new TransactionCompletionGateway($sdkProvider);
+$gateway = new TransactionCompletionGateway($sdkProvider, $logger);
 $service = new TransactionCompletionService($gateway, $logger);
 
 // Execute the void operation for the transaction.

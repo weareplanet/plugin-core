@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\Transaction;
 
 use WeArePlanet\PluginCore\Address\Address;
+use WeArePlanet\PluginCore\Customer\CompanyDetails;
+use WeArePlanet\PluginCore\Customer\PersonalDetails;
 use WeArePlanet\PluginCore\LineItem\LineItem;
 use WeArePlanet\PluginCore\Localization\LocalizedString;
-use WeArePlanet\PluginCore\Render\JsonStringableTrait;
+use WeArePlanet\PluginCore\SharedKernel\JsonStringableTrait;
 use WeArePlanet\PluginCore\Token\Token;
 
 /**
@@ -31,6 +33,11 @@ class Transaction
      * @var Address|null The billing address.
      */
     public ?Address $billingAddress = null;
+
+    /**
+     * @var CompanyDetails|null The customer's corporate identity data.
+     */
+    public ?CompanyDetails $companyDetails = null;
 
     /**
      * @var \DateTimeImmutable|null The date/time when the transaction was completed.
@@ -76,6 +83,11 @@ class Transaction
      * @var string|null The merchant reference.
      */
     public ?string $merchantReference = null;
+
+    /**
+     * @var PersonalDetails|null The customer's personal identity data.
+     */
+    public ?PersonalDetails $personalDetails = null;
 
     /**
      * @var \DateTimeImmutable|null The date/time when the transaction started processing.

@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV1;
 
 use WeArePlanet\PluginCore\Document\DocumentGatewayInterface;
+use WeArePlanet\PluginCore\Document\Exception\DocumentException;
 use WeArePlanet\PluginCore\Document\RenderedDocument;
 use WeArePlanet\PluginCore\Localization\LocalizedString;
+use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
+use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
-use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
 use WeArePlanet\Sdk\Model\CriteriaOperator as SdkCriteriaOperator;
 use WeArePlanet\Sdk\Model\EntityQuery as SdkEntityQuery;
 use WeArePlanet\Sdk\Model\EntityQueryFilter as SdkEntityQueryFilter;
@@ -23,16 +25,19 @@ use WeArePlanet\Sdk\Service\TransactionService as SdkTransactionService;
 /**
  * Gateway for retrieving documents using the SDK.
  */
+#[LogContext(domain: 'documentation')]
 class DocumentGateway implements DocumentGatewayInterface
 {
+    use DomainLoggerTrait;
     private SdkRefundService $refundService;
     private SdkTransactionInvoiceService $transactionInvoiceService;
     private SdkTransactionService $transactionService;
 
     public function __construct(
         private readonly SdkProvider $sdkProvider,
-        private readonly LoggerInterface $logger,
+        LoggerInterface $logger,
     ) {
+        $this->initializeLogger($logger);
         $this->transactionInvoiceService = $this->sdkProvider->getService(SdkTransactionInvoiceService::class);
         $this->transactionService = $this->sdkProvider->getService(SdkTransactionService::class);
         $this->refundService = $this->sdkProvider->getService(SdkRefundService::class);
@@ -92,7 +97,7 @@ class DocumentGateway implements DocumentGatewayInterface
                 // So I will stick with the search logic as it is more robust for "Invoice Service".
 
                 // If no invoice found, check if there is one in CANCELED state or just throw.
-                throw new TransactionException(
+                throw new DocumentException(
                     "No invoice found for transaction $transactionId in space $spaceId.",
                     new LocalizedString('No invoice found for the transaction.'),
                 );
@@ -102,9 +107,15 @@ class DocumentGateway implements DocumentGatewayInterface
             $sdkDocument = $this->transactionInvoiceService->getInvoiceDocument($spaceId, $invoice->getId());
 
             return $this->mapSdkDocument($sdkDocument);
-        } catch (\Exception $e) {
-            $this->logger->error("DocumentGateway: Failed to get invoice.", ['error' => $e->getMessage()]);
+        } catch (DocumentException $e) {
             throw $e;
+        } catch (\Throwable $e) {
+            $this->logger->error("DocumentGateway: Failed to get invoice.", ['exception' => $e]);
+            throw new DocumentException(
+                "Failed to get invoice document for transaction $transactionId: " . $e->getMessage(),
+                new LocalizedString('The invoice document could not be retrieved.'),
+                $e,
+            );
         }
     }
 
@@ -121,9 +132,13 @@ class DocumentGateway implements DocumentGatewayInterface
         try {
             $sdkDocument = $this->transactionService->getPackingSlip($spaceId, $transactionId);
             return $this->mapSdkDocument($sdkDocument);
-        } catch (\Exception $e) {
-            $this->logger->error("DocumentGateway: Failed to get packing slip.", ['error' => $e->getMessage()]);
-            throw $e;
+        } catch (\Throwable $e) {
+            $this->logger->error("DocumentGateway: Failed to get packing slip.", ['exception' => $e]);
+            throw new DocumentException(
+                "Failed to get packing slip for transaction $transactionId: " . $e->getMessage(),
+                new LocalizedString('The packing slip could not be retrieved.'),
+                $e,
+            );
         }
     }
 
@@ -140,9 +155,13 @@ class DocumentGateway implements DocumentGatewayInterface
         try {
             $sdkDocument = $this->refundService->getRefundDocument($spaceId, $refundId);
             return $this->mapSdkDocument($sdkDocument);
-        } catch (\Exception $e) {
-            $this->logger->error("DocumentGateway: Failed to get refund credit note.", ['error' => $e->getMessage()]);
-            throw $e;
+        } catch (\Throwable $e) {
+            $this->logger->error("DocumentGateway: Failed to get refund credit note.", ['exception' => $e]);
+            throw new DocumentException(
+                "Failed to get credit note for refund $refundId: " . $e->getMessage(),
+                new LocalizedString('The credit note could not be retrieved.'),
+                $e,
+            );
         }
     }
 

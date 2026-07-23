@@ -5,7 +5,14 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV1;
 
 use WeArePlanet\PluginCore\Address\Address;
+use WeArePlanet\PluginCore\Customer\CompanyDetails;
+use WeArePlanet\PluginCore\Customer\PersonalDetails;
 use WeArePlanet\PluginCore\LineItem\LineItem;
+use WeArePlanet\PluginCore\LineItem\LineItemAttribute;
+use WeArePlanet\PluginCore\LineItem\LineItemAttributeCollection;
+use WeArePlanet\PluginCore\Localization\LocalizedString;
+use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
+use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodCollection;
 use WeArePlanet\PluginCore\Sdk\PaymentMethodMapperTrait;
@@ -14,6 +21,7 @@ use WeArePlanet\PluginCore\Sdk\TransactionMapperTrait;
 use WeArePlanet\PluginCore\Settings\IntegrationMode as IntegrationModeEnum;
 use WeArePlanet\PluginCore\Settings\Settings;
 use WeArePlanet\PluginCore\Tax\Tax;
+use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
 use WeArePlanet\PluginCore\Transaction\PaymentUrl;
 use WeArePlanet\PluginCore\Transaction\Transaction;
 use WeArePlanet\PluginCore\Transaction\TransactionCollection;
@@ -21,6 +29,7 @@ use WeArePlanet\PluginCore\Transaction\TransactionContext;
 use WeArePlanet\PluginCore\Transaction\TransactionGatewayInterface;
 use WeArePlanet\PluginCore\Transaction\TransactionSearchCriteria;
 use WeArePlanet\Sdk\ApiException;
+use WeArePlanet\Sdk\Http\ConnectionException;
 use WeArePlanet\Sdk\Model\AddressCreate as SdkAddressCreate;
 use WeArePlanet\Sdk\Model\CreationEntityState as SdkCreationEntityState;
 use WeArePlanet\Sdk\Model\CriteriaOperator as SdkCriteriaOperator;
@@ -29,6 +38,7 @@ use WeArePlanet\Sdk\Model\EntityQueryFilter as SdkEntityQueryFilter;
 use WeArePlanet\Sdk\Model\EntityQueryFilterType as SdkEntityQueryFilterType;
 use WeArePlanet\Sdk\Model\EntityQueryOrderBy as SdkEntityQueryOrderBy;
 use WeArePlanet\Sdk\Model\EntityQueryOrderByType as SdkEntityQueryOrderByType;
+use WeArePlanet\Sdk\Model\LineItemAttributeCreate as SdkLineItemAttributeCreate;
 use WeArePlanet\Sdk\Model\LineItemCreate as SdkLineItemCreate;
 use WeArePlanet\Sdk\Model\LineItemType as SdkLineItemType;
 use WeArePlanet\Sdk\Model\TaxCreate as SdkTaxCreate;
@@ -39,9 +49,12 @@ use WeArePlanet\Sdk\Service\TransactionIframeService as SdkTransactionIframeServ
 use WeArePlanet\Sdk\Service\TransactionLightboxService as SdkTransactionLightboxService;
 use WeArePlanet\Sdk\Service\TransactionPaymentPageService as SdkTransactionPaymentPageService;
 use WeArePlanet\Sdk\Service\TransactionService as SdkTransactionService;
+use WeArePlanet\Sdk\VersioningException;
 
+#[LogContext(domain: 'transaction', subdomain: 'checkout')]
 class TransactionGateway implements TransactionGatewayInterface
 {
+    use DomainLoggerTrait;
     use PaymentMethodMapperTrait;
     use TransactionMapperTrait;
 
@@ -50,11 +63,61 @@ class TransactionGateway implements TransactionGatewayInterface
 
     public function __construct(
         private readonly SdkProvider $sdkProvider,
-        private readonly LoggerInterface $logger,
+        LoggerInterface $logger,
         private readonly Settings $settings,
     ) {
+        $this->initializeLogger($logger);
         $this->transactionService = $this->sdkProvider->getService(SdkTransactionService::class);
         $this->paymentMethodConfigService = $this->sdkProvider->getService(SdkPaymentMethodConfigurationService::class);
+    }
+
+    /**
+     * Explicitly confirms a transaction on the server side.
+     *
+     * Standard integration modes confirm implicitly through the payment
+     * widget; this call is for manual flows (e.g. MOTO / backend orders).
+     *
+     * @param int $spaceId The space ID.
+     * @param int $transactionId The transaction ID.
+     * @return Transaction The confirmed transaction.
+     * @throws TransactionException If the confirmation fails.
+     */
+    public function confirm(int $spaceId, int $transactionId): Transaction
+    {
+        $this->logger->debug("Gateway: Confirming transaction via server-to-server call.", [
+            'transactionId' => $transactionId,
+            'spaceId' => $spaceId,
+        ]);
+
+        try {
+            // Read the current transaction to obtain the version required for
+            // optimistic locking on the confirmation call.
+            $sdkTransaction = $this->transactionService->read($spaceId, $transactionId);
+
+            $sdkTransactionPending = new SdkTransactionPending();
+            $sdkTransactionPending->setId($transactionId);
+            $sdkTransactionPending->setVersion($sdkTransaction->getVersion());
+
+            $sdkConfirmed = $this->transactionService->confirm($spaceId, $sdkTransactionPending);
+            $this->logger->debug("Gateway: Transaction confirmed successfully.", [
+                'transactionId' => $transactionId,
+                'spaceId' => $spaceId,
+                'state' => (string)$sdkConfirmed->getState(),
+            ]);
+
+            return $this->mapToTransaction($sdkConfirmed);
+        } catch (\Throwable $e) {
+            $this->logger->error("Gateway: Failed to confirm transaction.", [
+                'exception' => $e,
+                'transactionId' => $transactionId,
+                'spaceId' => $spaceId,
+            ]);
+            throw new TransactionException(
+                "Unable to confirm transaction {$transactionId}: " . $e->getMessage(),
+                new LocalizedString('Unable to confirm the transaction.'),
+                $e,
+            );
+        }
     }
 
     /**
@@ -62,7 +125,7 @@ class TransactionGateway implements TransactionGatewayInterface
      *
      * @param TransactionContext $context The transaction context.
      * @return Transaction The created transaction.
-     * @throws \Exception If the transaction creation fails.
+     * @throws TransactionException If the transaction creation fails.
      */
     public function create(TransactionContext $context): Transaction
     {
@@ -71,12 +134,12 @@ class TransactionGateway implements TransactionGatewayInterface
             'spaceId' => $context->spaceId,
         ]);
 
-        $sdkBillingAddress = $this->mapAddress($context->billingAddress);
+        $sdkBillingAddress = $this->mapAddress($context->billingAddress, $context->personalDetails, $context->companyDetails);
         $sdkShippingAddress = $context->shippingAddress
-            ? $this->mapAddress($context->shippingAddress)
+            ? $this->mapAddress($context->shippingAddress, $context->personalDetails, $context->companyDetails)
             : $sdkBillingAddress;
 
-        $sdkLineItems = array_map([$this, 'mapLineItem'], $context->lineItems);
+        $sdkLineItems = array_map([$this, 'mapLineItem'], $context->lineItems->all());
 
         $sdkTransactionCreate = new SdkTransactionCreate();
         $sdkTransactionCreate->setBillingAddress($sdkBillingAddress);
@@ -85,17 +148,29 @@ class TransactionGateway implements TransactionGatewayInterface
 
         $sdkTransactionCreate->setCurrency($context->currencyCode);
         $sdkTransactionCreate->setLanguage($context->language);
-        $sdkTransactionCreate->setCustomerEmailAddress($context->billingAddress->emailAddress);
+        $sdkTransactionCreate->setCustomerEmailAddress($context->personalDetails?->emailAddress);
         $sdkTransactionCreate->setCustomerId($context->customerId);
         $sdkTransactionCreate->setMerchantReference($context->merchantReference);
 
-        $sdkTransactionCreate->setSuccessUrl($context->successUrl);
-        $sdkTransactionCreate->setFailedUrl($context->failedUrl);
+        if ($context->successUrl !== null) {
+            $sdkTransactionCreate->setSuccessUrl($context->successUrl->value);
+        }
+        if ($context->failedUrl !== null) {
+            $sdkTransactionCreate->setFailedUrl($context->failedUrl->value);
+        }
         $sdkTransactionCreate->setAutoConfirmationEnabled($context->autoConfirmationEnabled);
         $sdkTransactionCreate->setChargeRetryEnabled($context->chargeRetryEnabled);
 
         if ($context->spaceViewId !== null) {
             $sdkTransactionCreate->setSpaceViewId($context->spaceViewId);
+        }
+
+        if ($context->customersPresence !== null) {
+            $sdkTransactionCreate->setCustomersPresence($context->customersPresence->value);
+        }
+
+        if ($context->deviceSessionIdentifier !== null) {
+            $sdkTransactionCreate->setDeviceSessionIdentifier($context->deviceSessionIdentifier);
         }
 
         if ($context->token) {
@@ -116,9 +191,13 @@ class TransactionGateway implements TransactionGatewayInterface
             $this->logger->debug("Gateway: Transaction created successfully.", ['id' => $sdkTransaction->getId()]);
 
             return $this->mapToTransaction($sdkTransaction);
-        } catch (\Exception $e) {
-            $this->logger->error("Gateway: Failed to create transaction.", ['error' => $e->getMessage()]);
-            throw $e;
+        } catch (\Throwable $e) {
+            $this->logger->error("Gateway: Failed to create transaction.", ['exception' => $e]);
+            throw new TransactionException(
+                'Unable to create transaction: ' . $e->getMessage(),
+                new LocalizedString('Unable to create transaction.'),
+                $e,
+            );
         }
     }
 
@@ -134,7 +213,7 @@ class TransactionGateway implements TransactionGatewayInterface
         try {
             $sdkTransaction = $this->transactionService->read($spaceId, $transactionId);
             return $this->mapToTransaction($sdkTransaction);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             if ($e instanceof ApiException && $e->getCode() === 404) {
                 $this->logger->debug(
                     'Gateway: Transaction {transactionId} not found in Space {spaceId}.',
@@ -155,7 +234,11 @@ class TransactionGateway implements TransactionGatewayInterface
                     'transactionId' => $transactionId,
                 ],
             );
-            throw $e;
+            throw new TransactionException(
+                "Failed to find transaction {$transactionId}: " . $e->getMessage(),
+                new LocalizedString('Unable to read the transaction.'),
+                $e,
+            );
         }
     }
 
@@ -185,9 +268,13 @@ class TransactionGateway implements TransactionGatewayInterface
             ]);
 
             return $result;
-        } catch (\Exception $e) {
-            $this->logger->error("Gateway: Failed to read transaction.", ['error' => $e->getMessage()]);
-            throw $e;
+        } catch (\Throwable $e) {
+            $this->logger->error("Gateway: Failed to read transaction.", ['exception' => $e]);
+            throw new TransactionException(
+                "Unable to read transaction {$transactionId}: " . $e->getMessage(),
+                new LocalizedString('Unable to read the transaction.'),
+                $e,
+            );
         }
     }
 
@@ -207,8 +294,21 @@ class TransactionGateway implements TransactionGatewayInterface
             'spaceId' => $spaceId,
         ]);
 
-        $sdkResults = $this->transactionService->fetchPaymentMethods($spaceId, $transactionId, $mode);
-        return new PaymentMethodCollection(...array_map([$this, 'mapToPaymentMethod'], $sdkResults));
+        try {
+            $sdkResults = $this->transactionService->fetchPaymentMethods($spaceId, $transactionId, $mode);
+            return new PaymentMethodCollection(...array_map([$this, 'mapToPaymentMethod'], $sdkResults));
+        } catch (\Throwable $e) {
+            $this->logger->error("Gateway: Failed to fetch payment methods.", [
+                'exception' => $e,
+                'transactionId' => $transactionId,
+                'spaceId' => $spaceId,
+            ]);
+            throw new TransactionException(
+                "Unable to fetch payment methods for transaction {$transactionId}: " . $e->getMessage(),
+                new LocalizedString('Unable to fetch the available payment methods.'),
+                $e,
+            );
+        }
     }
 
     /**
@@ -227,16 +327,28 @@ class TransactionGateway implements TransactionGatewayInterface
         $sdkEntityQueryFilter->setValue(SdkCreationEntityState::ACTIVE);
         $sdkEntityQuery->setFilter($sdkEntityQueryFilter);
 
-        $results = $this->paymentMethodConfigService->search($spaceId, $sdkEntityQuery);
-        $this->logger->debug("Gateway: Fetched payment method configurations.", [
-            'count' => count($results),
-            'spaceId' => $spaceId,
-        ]);
+        try {
+            $results = $this->paymentMethodConfigService->search($spaceId, $sdkEntityQuery);
+            $this->logger->debug("Gateway: Fetched payment method configurations.", [
+                'count' => count($results),
+                'spaceId' => $spaceId,
+            ]);
 
-        return new PaymentMethodCollection(...array_map(
-            [$this, 'mapToPaymentMethod'],
-            $results,
-        ));
+            return new PaymentMethodCollection(...array_map(
+                [$this, 'mapToPaymentMethod'],
+                $results,
+            ));
+        } catch (\Throwable $e) {
+            $this->logger->error("Gateway: Failed to fetch payment method configurations.", [
+                'exception' => $e,
+                'spaceId' => $spaceId,
+            ]);
+            throw new TransactionException(
+                'Unable to fetch payment method configurations: ' . $e->getMessage(),
+                new LocalizedString('Unable to fetch the payment method configurations.'),
+                $e,
+            );
+        }
     }
 
     /**
@@ -255,44 +367,78 @@ class TransactionGateway implements TransactionGatewayInterface
             'spaceId' => $spaceId,
         ]);
 
-        $url = match ($mode) {
-            IntegrationModeEnum::PAYMENT_PAGE => $this->sdkProvider
-                ->getService(SdkTransactionPaymentPageService::class)
-                ->paymentPageUrl($spaceId, $transactionId),
+        try {
+            $url = match ($mode) {
+                IntegrationModeEnum::PAYMENT_PAGE => $this->sdkProvider
+                    ->getService(SdkTransactionPaymentPageService::class)
+                    ->paymentPageUrl($spaceId, $transactionId),
 
-            IntegrationModeEnum::IFRAME => $this->sdkProvider
-                ->getService(SdkTransactionIframeService::class)
-                ->javascriptUrl($spaceId, $transactionId),
+                IntegrationModeEnum::IFRAME => $this->sdkProvider
+                    ->getService(SdkTransactionIframeService::class)
+                    ->javascriptUrl($spaceId, $transactionId),
 
-            IntegrationModeEnum::LIGHTBOX => $this->sdkProvider
-                ->getService(SdkTransactionLightboxService::class)
-                ->javascriptUrl($spaceId, $transactionId),
-        };
+                IntegrationModeEnum::LIGHTBOX => $this->sdkProvider
+                    ->getService(SdkTransactionLightboxService::class)
+                    ->javascriptUrl($spaceId, $transactionId),
+            };
 
-        return new PaymentUrl($url);
+            return new PaymentUrl($url);
+        } catch (\Throwable $e) {
+            $this->logger->error("Gateway: Failed to fetch payment URL.", [
+                'exception' => $e,
+                'transactionId' => $transactionId,
+                'spaceId' => $spaceId,
+            ]);
+            throw new TransactionException(
+                "Unable to fetch payment URL for transaction {$transactionId}: " . $e->getMessage(),
+                new LocalizedString('Unable to fetch the payment URL.'),
+                $e,
+            );
+        }
     }
 
     /**
-     * Maps a domain Address to an SDK AddressCreate.
+     * Maps the domain Address plus the customer's identity data onto the flat
+     * SDK AddressCreate payload expected by the legacy API.
      *
-     * @param Address $source The source address.
+     * @param Address $source The source address (geographic data).
+     * @param PersonalDetails|null $personalDetails The customer's personal identity data.
+     * @param CompanyDetails|null $companyDetails The customer's corporate identity data.
      * @return SdkAddressCreate The SDK address.
      */
-    private function mapAddress(Address $source): SdkAddressCreate
-    {
+    private function mapAddress(
+        Address $source,
+        ?PersonalDetails $personalDetails,
+        ?CompanyDetails $companyDetails,
+    ): SdkAddressCreate {
+        $source->sanitize();
+
         $sdkAddressCreate = new SdkAddressCreate();
+
         $sdkAddressCreate->setCity($source->city);
         $sdkAddressCreate->setCountry($source->country);
-        $sdkAddressCreate->setFamilyName($source->familyName);
-        $sdkAddressCreate->setGivenName($source->givenName);
-        $sdkAddressCreate->setOrganizationName($source->organizationName);
+        $sdkAddressCreate->setDependentLocality($source->dependentLocality);
         $sdkAddressCreate->setPhoneNumber($source->phoneNumber);
+        $sdkAddressCreate->setPostalState($source->postalState);
         $sdkAddressCreate->setPostcode($source->postcode);
+        $sdkAddressCreate->setSortingCode($source->sortingCode);
         $sdkAddressCreate->setStreet($source->street);
-        $sdkAddressCreate->setEmailAddress($source->emailAddress);
-        $sdkAddressCreate->setSalutation($source->salutation);
-        $sdkAddressCreate->setDateOfBirth($source->dateOfBirth ? \DateTime::createFromImmutable($source->dateOfBirth) : null);
-        $sdkAddressCreate->setSalesTaxNumber($source->salesTaxNumber);
+
+        $sdkAddressCreate->setDateOfBirth($personalDetails?->dateOfBirth ? \DateTime::createFromImmutable($personalDetails->dateOfBirth) : null);
+        $sdkAddressCreate->setEmailAddress($personalDetails?->emailAddress);
+        $sdkAddressCreate->setFamilyName($personalDetails?->familyName);
+        if ($personalDetails?->gender !== null) {
+            $sdkAddressCreate->setGender($personalDetails->gender->value);
+        }
+        $sdkAddressCreate->setGivenName($personalDetails?->givenName);
+        $sdkAddressCreate->setMobilePhoneNumber($personalDetails?->mobilePhoneNumber);
+        $sdkAddressCreate->setSalutation($personalDetails?->salutation);
+        $sdkAddressCreate->setSocialSecurityNumber($personalDetails?->socialSecurityNumber);
+
+        $sdkAddressCreate->setCommercialRegisterNumber($companyDetails?->commercialRegisterNumber);
+        $sdkAddressCreate->setOrganizationName($companyDetails?->organizationName);
+        $sdkAddressCreate->setSalesTaxNumber($companyDetails?->salesTaxNumber);
+
         return $sdkAddressCreate;
     }
 
@@ -304,6 +450,8 @@ class TransactionGateway implements TransactionGatewayInterface
      */
     private function mapLineItem(LineItem $source): SdkLineItemCreate
     {
+        $source->sanitize();
+
         $sdkLineItemCreate = new SdkLineItemCreate();
         $sdkLineItemCreate->setUniqueId($source->uniqueId);
         $sdkLineItemCreate->setSku($source->sku);
@@ -312,8 +460,12 @@ class TransactionGateway implements TransactionGatewayInterface
         $sdkLineItemCreate->setAmountIncludingTax($source->amountIncludingTax);
         $sdkLineItemCreate->setShippingRequired($source->shippingRequired);
 
-        if (!empty($source->attributes)) {
-            $sdkLineItemCreate->setAttributes($source->attributes);
+        if ($source->attributes !== null && !$source->attributes->isEmpty()) {
+            $sdkLineItemCreate->setAttributes($this->mapLineItemAttributes($source->attributes));
+        }
+
+        if ($source->discountIncludingTax !== null) {
+            $sdkLineItemCreate->setDiscountIncludingTax($source->discountIncludingTax);
         }
 
         $sdkLineItemCreate->setType(match ($source->type) {
@@ -331,6 +483,26 @@ class TransactionGateway implements TransactionGatewayInterface
             $sdkLineItemCreate->setTaxes($taxes);
         }
         return $sdkLineItemCreate;
+    }
+
+    /**
+     * Maps the domain line item attributes onto the SDK structure expected by
+     * `LineItemCreate::setAttributes()` — a map of {@see LineItemAttribute::$id}
+     * to {@see SdkLineItemAttributeCreate} with explicit label and value.
+     *
+     * @param LineItemAttributeCollection $sourceAttributes
+     * @return array<string, SdkLineItemAttributeCreate>
+     */
+    private function mapLineItemAttributes(LineItemAttributeCollection $sourceAttributes): array
+    {
+        $result = [];
+        foreach ($sourceAttributes as $attribute) {
+            $sdkAttribute = new SdkLineItemAttributeCreate();
+            $sdkAttribute->setLabel($attribute->label);
+            $sdkAttribute->setValue($attribute->value);
+            $result[$attribute->id] = $sdkAttribute;
+        }
+        return $result;
     }
 
     /**
@@ -397,9 +569,13 @@ class TransactionGateway implements TransactionGatewayInterface
         try {
             $results = $this->transactionService->search($spaceId, $query);
             return new TransactionCollection(...array_map([$this, 'mapToTransaction'], $results));
-        } catch (\Exception $e) {
-            $this->logger->error("Gateway: Failed to search transactions.", ['error' => $e->getMessage()]);
-            throw $e;
+        } catch (\Throwable $e) {
+            $this->logger->error("Gateway: Failed to search transactions.", ['exception' => $e]);
+            throw new TransactionException(
+                'Unable to search transactions: ' . $e->getMessage(),
+                new LocalizedString('Unable to search transactions.'),
+                $e,
+            );
         }
     }
 
@@ -422,16 +598,20 @@ class TransactionGateway implements TransactionGatewayInterface
         $sdkTransactionPending->setVersion($version);
 
         // Map the NEW data from the Context
-        $sdkTransactionPending->setBillingAddress($this->mapAddress($context->billingAddress));
-        $sdkTransactionPending->setShippingAddress($context->shippingAddress ? $this->mapAddress($context->shippingAddress) : null);
-        $sdkTransactionPending->setLineItems(array_map([$this, 'mapLineItem'], $context->lineItems));
+        $sdkTransactionPending->setBillingAddress($this->mapAddress($context->billingAddress, $context->personalDetails, $context->companyDetails));
+        $sdkTransactionPending->setShippingAddress($context->shippingAddress ? $this->mapAddress($context->shippingAddress, $context->personalDetails, $context->companyDetails) : null);
+        $sdkTransactionPending->setLineItems(array_map([$this, 'mapLineItem'], $context->lineItems->all()));
         $sdkTransactionPending->setCurrency($context->currencyCode);
         $sdkTransactionPending->setLanguage($context->language);
-        $sdkTransactionPending->setCustomerEmailAddress($context->billingAddress->emailAddress);
+        $sdkTransactionPending->setCustomerEmailAddress($context->personalDetails?->emailAddress);
         $sdkTransactionPending->setCustomerId($context->customerId);
         $sdkTransactionPending->setMerchantReference($context->merchantReference);
-        $sdkTransactionPending->setSuccessUrl($context->successUrl);
-        $sdkTransactionPending->setFailedUrl($context->failedUrl);
+        if ($context->successUrl !== null) {
+            $sdkTransactionPending->setSuccessUrl($context->successUrl->value);
+        }
+        if ($context->failedUrl !== null) {
+            $sdkTransactionPending->setFailedUrl($context->failedUrl->value);
+        }
 
         try {
             $this->logger->debug("Gateway: Sending UPDATE request to SDK.");
@@ -439,9 +619,21 @@ class TransactionGateway implements TransactionGatewayInterface
             $this->logger->debug("Gateway: Transaction updated successfully.", ['state' => (string) $sdkTransaction->getState()]);
 
             return $this->mapToTransaction($sdkTransaction);
-        } catch (\Exception $e) {
-            $this->logger->error("Gateway: Failed to update transaction.", ['error' => $e->getMessage()]);
-            throw $e;
+        } catch (\Throwable $e) {
+            $this->logger->error("Gateway: Failed to update transaction.", ['exception' => $e]);
+            $exception = new TransactionException(
+                "Unable to update transaction {$transactionId}: " . $e->getMessage(),
+                new LocalizedString('Unable to update the transaction.'),
+                $e,
+            );
+
+            // A version conflict means another process updated the transaction concurrently;
+            // re-reading and retrying is expected to succeed. A connection error is transient.
+            if ($e instanceof VersioningException || $e instanceof ConnectionException) {
+                $exception->withRetryable(true);
+            }
+
+            throw $exception;
         }
     }
 }

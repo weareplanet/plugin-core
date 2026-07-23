@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Render;
 
+use WeArePlanet\PluginCore\SharedKernel\JsonStringableTrait;
+
 /**
  * Data Transfer Object for payment rendering options.
  *

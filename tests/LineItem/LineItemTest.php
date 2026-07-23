@@ -9,6 +9,39 @@ use WeArePlanet\PluginCore\LineItem\LineItem;
 
 class LineItemTest extends TestCase
 {
+    public function testSanitizeLeavesShortFieldsUntouched(): void
+    {
+        $item = new LineItem();
+        $item->name = 'Product';
+        $item->sku = 'SKU-001';
+
+        $item->sanitize();
+
+        $this->assertSame('Product', $item->name);
+        $this->assertSame('SKU-001', $item->sku);
+    }
+
+    public function testSanitizeTruncatesName(): void
+    {
+        $item = new LineItem();
+        $item->name = str_repeat('a', 200);
+        $item->sku = 'SKU-001';
+
+        $item->sanitize();
+
+        $this->assertSame(str_repeat('a', 150), $item->name);
+    }
+
+    public function testSanitizeTruncatesSku(): void
+    {
+        $item = new LineItem();
+        $item->name = 'Product';
+        $item->sku = str_repeat('b', 250);
+
+        $item->sanitize();
+
+        $this->assertSame(str_repeat('b', 200), $item->sku);
+    }
     public function testToString(): void
     {
         $item = new LineItem();

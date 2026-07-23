@@ -23,6 +23,7 @@ The system is designed to process incoming webhooks by mapping them to specific 
 * **`WebhookProcessor`**: The main service that orchestrates the entire process, calling the `WebhookLifecycleHandler` hooks at the appropriate times.
 * **`Listener`**: Provides the correct `Command` for a specific webhook event.
 * **`Command`**: Contains the **pure business logic** (e.g., creating an invoice). It receives the full event details via a `WebhookContext` object.
+* **`TransactionActionResolver` / `LifecycleAction`**: Translates a `Transaction\State` into the coarse-grained shop action it implies (`AUTHORIZE`, `FULFILL`, `CANCEL_ORDER`, `IGNORE`), so your `Listener` never has to interpret raw gateway states itself. See [Mapping States to Actions](#mapping-states-to-actions-transactionactionresolver) below.
 * **`LoggerInterface`**: The plugin **must provide** a PSR-3 compatible logger implementation (or adapter) so the core can log debug information and errors.
 
 ---
@@ -59,9 +60,24 @@ A `Command` contains the **pure business logic**.
 
 **Important:** Commands must follow the **"Safe Update"** pattern. Always reload the resource (Order) from the database to ensure it isn't stale, and check for protected states (e.g., "Payment Review") before overwriting status. See the **[Architecture Overview](ARCHITECTURE.md)** document for more information.
 
+**Transient failures:** If the command (or your `preProcess()` lock acquisition) hits a temporary, self-healing condition — e.g. a lock contention timeout under concurrent deliveries — throw a `TransientWebhookException` (`WeArePlanet\PluginCore\Webhook\Exception`). The core performs the normal rollback and 5xx-retry flow but logs the event at `info` severity instead of `error`, keeping the logs free of false alarms. See **[Failure Handling & Retries](ARCHITECTURE.md)** for details.
+
 ### Step 5: Create the Rule (The `Listener`)
 
 A `Listener` connects a webhook event to a `Command`. Its `getCommand()` method receives the `WebhookContext` and creates the `Command`.
+
+#### Mapping States to Actions: `TransactionActionResolver`
+
+Do **not** write custom `if`/`else` (or `match`) logic in your `Listener` to guess what a `Transaction\State` means for your shop — e.g. deciding for yourself whether `AUTHORIZED` is "close enough" to `FULFILL` to generate an invoice. That interpretation is a business decision `plugin-core` already makes for you. Delegate it to `TransactionActionResolver::resolve()`, which translates any `Transaction\State` into one of four `LifecycleAction` cases:
+
+| `LifecycleAction` | Meaning | Typical shop action |
+|---|---|---|
+| `AUTHORIZE` | Payment is secured (state `AUTHORIZED`). | Send the order confirmation email; lock the cart so it can't be re-submitted. |
+| `FULFILL` | Funds are captured and ready (states `COMPLETED`, `FULFILL`). | Generate the invoice; flag the order for shipping. |
+| `CANCEL_ORDER` | Payment failed or was voided (states `FAILED`, `VOIDED`, `DECLINE`). | Cancel the shop order. |
+| `IGNORE` | An intermediate or tracking-only state (`CREATE`, `PENDING`, `CONFIRMED`, `PROCESSING`). | Safely take no action — the catch-up loop still records it. |
+
+A `Listener` typically injects the resolver into its constructor, then `match`es on the `LifecycleAction` returned by `resolve()` to pick the right `Command` — this keeps the business meaning of a gateway state defined in exactly one place (`TransactionActionResolver`) instead of scattered across every plugin's own conditional logic.
 
 ### Step 6: Register The `Listener`
 

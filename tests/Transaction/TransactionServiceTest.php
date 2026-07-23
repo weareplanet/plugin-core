@@ -7,6 +7,7 @@ namespace WeArePlanet\PluginCore\Tests\Transaction;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use WeArePlanet\PluginCore\Address\Address;
+use WeArePlanet\PluginCore\Customer\PersonalDetails;
 use WeArePlanet\PluginCore\LineItem\LineItem;
 use WeArePlanet\PluginCore\LineItem\LineItemCollection;
 use WeArePlanet\PluginCore\LineItem\LineItemConsistencyService;
@@ -17,6 +18,7 @@ use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodCollection;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodSorting;
 use WeArePlanet\PluginCore\PaymentMethod\State as PaymentMethodState;
 use WeArePlanet\PluginCore\Settings\Settings;
+use WeArePlanet\PluginCore\SharedKernel\Url;
 use WeArePlanet\PluginCore\Transaction\PaymentUrl;
 use WeArePlanet\PluginCore\Transaction\State;
 use WeArePlanet\PluginCore\Transaction\Transaction;
@@ -88,7 +90,7 @@ class TransactionServiceTest extends TestCase
         $context->merchantReference = 'ZERO-TOTAL';
         $context->currencyCode = 'CHF';
         $context->expectedGrandTotal = 0.00;
-        $context->lineItems = [];
+        $context->lineItems = new LineItemCollection();
 
         $this->consistencyService->method('ensureConsistency')
             ->willReturnCallback(fn (array $items): LineItemCollection => new LineItemCollection(...$items));
@@ -125,7 +127,7 @@ class TransactionServiceTest extends TestCase
         $item2->amountIncludingTax = -150.00;
         $item2->type = LineItem::TYPE_DISCOUNT;
 
-        $context->lineItems = [$item1, $item2];
+        $context->lineItems = new LineItemCollection($item1, $item2);
 
         // Mock sanitization: 100, -150 -> 100, -100
         $sanitizedItem1 = clone $item1;
@@ -134,7 +136,7 @@ class TransactionServiceTest extends TestCase
 
         $this->consistencyService->expects($this->once())
             ->method('sanitizeNegativeLineItems')
-            ->with($context->lineItems)
+            ->with($context->lineItems->all())
             ->willReturn(new LineItemCollection($sanitizedItem1, $sanitizedItem2));
 
         // Mock consistency check: 0.00 total
@@ -161,7 +163,7 @@ class TransactionServiceTest extends TestCase
 
         $this->assertEquals(777, $result->id);
         $this->assertEquals(0.00, $context->expectedGrandTotal);
-        $this->assertEquals(-100.00, $context->lineItems[1]->amountIncludingTax);
+        $this->assertEquals(-100.00, $context->lineItems->all()[1]->amountIncludingTax);
     }
 
     public function testGetAvailablePaymentMethodsSortsByName(): void
@@ -331,13 +333,12 @@ class TransactionServiceTest extends TestCase
         $context->currencyCode = 'CHF';
         $context->language = 'en-US';
         $context->customerId = 'TEST-CUST-1';
-        $context->lineItems = [];
-        $context->successUrl = 'https://example.com/success';
-        $context->failedUrl = 'https://example.com/fail';
+        $context->lineItems = new LineItemCollection();
+        $context->successUrl = new Url('https://example.com/success');
+        $context->failedUrl = new Url('https://example.com/fail');
 
         $context->billingAddress = new Address();
-        $context->billingAddress->givenName = 'Test';
-        $context->billingAddress->familyName = 'User';
+        $context->personalDetails = new PersonalDetails(familyName: 'User', givenName: 'Test');
 
         // Mock Find
         $domainTx = new Transaction();
@@ -393,7 +394,7 @@ class TransactionServiceTest extends TestCase
         $item2->amountIncludingTax = -100.00;
         $item2->type = LineItem::TYPE_DISCOUNT;
 
-        $context->lineItems = [$item1, $item2];
+        $context->lineItems = new LineItemCollection($item1, $item2);
 
         $existing = new Transaction();
         $existing->id = 123;
@@ -405,7 +406,7 @@ class TransactionServiceTest extends TestCase
         // Expect sanitization
         $this->consistencyService->expects($this->once())
             ->method('sanitizeNegativeLineItems')
-            ->willReturn(new LineItemCollection(...$context->lineItems, )); // Just return same for simplicity in mock
+            ->willReturn($context->lineItems); // Just return same for simplicity in mock
 
         $this->gateway->expects($this->once())
             ->method('update')

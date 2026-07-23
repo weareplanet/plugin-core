@@ -57,7 +57,29 @@ The `WebhookProcessor` enforces an **Atomic Transaction** per step in the catch-
 
 ---
 
-## 4. Data Integrity & State Precedence
+## 4. Failure Handling & Retries
+
+Any exception thrown during a step triggers the same recovery path: the processor calls `onFailure()` (rolling back the transaction and releasing all locks) and re-throws a `CommandException`. The entry-point controller should translate this into a **5xx response**, which instructs the portal to redeliver the webhook later.
+
+### Transient Failures (Expected Contention)
+
+Not every failure is a defect. Under concurrent deliveries, a lock acquisition can legitimately time out — the portal retry will succeed on the next attempt. Throwing a generic exception in that situation floods the logs with `error` entries for a self-healing state.
+
+To signal this, throw a `TransientWebhookException` (from `preProcess()` or a `Command`):
+
+```php
+use WeArePlanet\PluginCore\Webhook\Exception\TransientWebhookException;
+
+if (!$this->lockService->acquire($resourceId, timeoutSeconds: 5)) {
+    throw new TransientWebhookException('Lock contention: resource is busy, the retry will recover.');
+}
+```
+
+The processor performs the exact same recovery (rollback, lock release, `CommandException` → 5xx retry), but logs at **info** severity instead of **error**, keeping the logs free of false alarms.
+
+---
+
+## 5. Data Integrity & State Precedence
 
 Locking ensures commands run one at a time, but it does not guarantee the *order* in which they run. A `Delivery Indication` (forcing Manual Review) might arrive milliseconds *after* a `Capture` command (forcing Processing).
 
@@ -84,7 +106,7 @@ A Standard Priority command (like `Authorized`) **must not** overwrite a High Pr
 
 ---
 
-## 5. Implementation Checklist
+## 6. Implementation Checklist
 
 To implement `plugin-core` in a new shop system:
 

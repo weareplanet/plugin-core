@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\PaymentMethod;
 
+use WeArePlanet\PluginCore\PaymentMethod\Exception\PaymentMethodException;
+
 /**
  * Interface for fetching payment methods from the infrastructure layer.
  */
@@ -25,6 +27,7 @@ interface PaymentMethodGatewayInterface
      * @param int $spaceId The ID of the space.
      * @param string|null $state Optional state to filter by.
      * @return PaymentMethodCollection List of available payment methods.
+     * @throws PaymentMethodException If the payment methods cannot be retrieved.
      */
     public function fetchBySpaceId(int $spaceId, ?string $state = null): PaymentMethodCollection;
 }

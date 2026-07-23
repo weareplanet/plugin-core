@@ -32,7 +32,7 @@ try {
 }
 
 // Setup required services for transaction completion.
-$completionGateway = new TransactionCompletionGateway($sdkProvider);
+$completionGateway = new TransactionCompletionGateway($sdkProvider, $logger);
 $completionService = new TransactionCompletionService($completionGateway, $logger);
 
 echo "Attempting to Capture Transaction ID: $transactionId\n";

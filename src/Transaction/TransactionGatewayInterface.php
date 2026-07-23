@@ -5,9 +5,20 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\Transaction;
 
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodCollection;
+use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
 
 interface TransactionGatewayInterface
 {
+    /**
+     * Explicitly confirms a transaction on the server side.
+     *
+     * @param int $spaceId The space ID.
+     * @param int $transactionId The transaction ID.
+     * @return Transaction The confirmed transaction.
+     * @throws TransactionException If the confirmation fails.
+     */
+    public function confirm(int $spaceId, int $transactionId): Transaction;
+
     /**
      * Creates a new transaction.
      *

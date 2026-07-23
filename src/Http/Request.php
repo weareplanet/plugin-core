@@ -6,7 +6,7 @@ namespace WeArePlanet\PluginCore\Http;
 
 use Magento\Framework\App\RequestInterface as MagentoRequest;
 use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
-use WeArePlanet\PluginCore\Render\JsonStringableTrait;
+use WeArePlanet\PluginCore\SharedKernel\JsonStringableTrait;
 
 class Request
 {

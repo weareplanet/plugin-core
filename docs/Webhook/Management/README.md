@@ -1,6 +1,6 @@
 # Webhook Management
 
-The Webhook Management module allows to programmatically manage webhook subscriptions in the Portal and validate incoming payloads.
+The Webhook Management module allows developers to programmatically manage webhook subscriptions in the Portal and validate incoming payloads.
 
 ## Overview
 
@@ -54,7 +54,7 @@ $webhookService->updateWebhookUrl($spaceId, $webhookUrlId, 'https://new-url.com/
 
 ### Uninstallation
 
-Correctly removes both the listener and the URL definition. If listener deletion fails, it still attempts to clean up the URL.
+Deletes the listener, then the URL definition. If listener deletion fails, the operation stops there and the URL is left in place, so you can safely retry.
 
 ```php
 $webhookService->uninstallWebhook($spaceId, $webhookUrlId, $listenerId);

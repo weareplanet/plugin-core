@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\Webhook;
 
 use WeArePlanet\PluginCore\Webhook\Enum\WebhookListener as WebhookListenerEnum;
+use WeArePlanet\PluginCore\Webhook\Exception\TransientWebhookException;
 
 /**
  * Defines the contract for a class that handles all shop-specific
@@ -49,6 +50,8 @@ interface WebhookLifecycleHandler
      * It must re-check the local state to prevent race conditions.
      *
      * @return bool Returns true to proceed, or false to skip this step.
+     * @throws TransientWebhookException When a temporary, self-healing condition
+     *         (e.g. a lock contention timeout) prevents processing right now.
      */
     public function preProcess(WebhookListenerEnum $listener, WebhookContext $context): bool;
 }

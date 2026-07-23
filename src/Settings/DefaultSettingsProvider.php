@@ -40,7 +40,6 @@ abstract class DefaultSettingsProvider implements SettingsProviderInterface
         return null;
     }
 
-
     // --- OPTIONAL: Defaults provided below ---
 
     public function getLogLevel(): ?string
@@ -48,6 +47,7 @@ abstract class DefaultSettingsProvider implements SettingsProviderInterface
         // Return null to let the Settings class default to 'INFO'
         return null;
     }
+
     // --- REQUIRED: Must be implemented by the integration ---
 
     abstract public function getSpaceId(): ?int;

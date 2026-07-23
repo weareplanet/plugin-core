@@ -8,12 +8,14 @@ use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Refund\Exception\RefundException;
+use WeArePlanet\PluginCore\Refund\LineItem\RefundLineItemCollection;
 use WeArePlanet\PluginCore\Refund\Refund;
 use WeArePlanet\PluginCore\Refund\RefundContext;
 use WeArePlanet\PluginCore\Refund\Type as RefundType;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\RefundGateway;
 use WeArePlanet\PluginCore\Transaction\Transaction;
+use WeArePlanet\Sdk\Http\ConnectionException;
 use WeArePlanet\Sdk\Model\FailureReason as SdkFailureReason;
 use WeArePlanet\Sdk\Model\Refund as SdkRefund;
 use WeArePlanet\Sdk\Model\RefundCreate as SdkRefundCreate;
@@ -96,7 +98,7 @@ class RefundGatewayTest extends TestCase
             10.0,
             'ref-1',
             RefundType::MERCHANT_INITIATED_ONLINE,
-            [],
+            new RefundLineItemCollection(),
         );
 
         $sdkRefund = new SdkRefund();
@@ -121,6 +123,27 @@ class RefundGatewayTest extends TestCase
         $this->assertEquals(10.0, $result->amount);
     }
 
+    public function testRefundDoesNotMarkGenericFailureAsRetryable(): void
+    {
+        $context = new RefundContext(
+            2,
+            10.0,
+            'ref-no-retry',
+            RefundType::MERCHANT_INITIATED_ONLINE,
+            new RefundLineItemCollection(),
+        );
+
+        $this->refundService->method('refund')
+            ->willThrowException(new \RuntimeException('Something else went wrong.'));
+
+        try {
+            $this->gateway->refund(1, $context);
+            $this->fail('Expected a RefundException to be thrown.');
+        } catch (RefundException $e) {
+            $this->assertFalse($e->isRetryable());
+        }
+    }
+
     public function testRefundFailedOnIsMapped(): void
     {
         $spaceId = 1;
@@ -131,7 +154,7 @@ class RefundGatewayTest extends TestCase
             10.0,
             'ref-dates',
             RefundType::MERCHANT_INITIATED_ONLINE,
-            [],
+            new RefundLineItemCollection(),
         );
 
         $createdOn = new \DateTime('2026-01-15T10:00:00+00:00');
@@ -167,7 +190,7 @@ class RefundGatewayTest extends TestCase
             10.0,
             'ref-fail',
             RefundType::MERCHANT_INITIATED_ONLINE,
-            [],
+            new RefundLineItemCollection(),
         );
 
         $failureReason = new SdkFailureReason();
@@ -192,5 +215,26 @@ class RefundGatewayTest extends TestCase
         $this->assertNotNull($result->failureReason);
         $this->assertSame('Insufficient funds', $result->failureReason->localize('en-US'));
         $this->assertSame('Unzureichende Deckung', $result->failureReason->localize('de-DE'));
+    }
+
+    public function testRefundMarksConnectionExceptionAsRetryable(): void
+    {
+        $context = new RefundContext(
+            2,
+            10.0,
+            'ref-retry',
+            RefundType::MERCHANT_INITIATED_ONLINE,
+            new RefundLineItemCollection(),
+        );
+
+        $this->refundService->method('refund')
+            ->willThrowException(new ConnectionException());
+
+        try {
+            $this->gateway->refund(1, $context);
+            $this->fail('Expected a RefundException to be thrown.');
+        } catch (RefundException $e) {
+            $this->assertTrue($e->isRetryable());
+        }
     }
 }

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace WeArePlanet\PluginCore\Render;
+namespace WeArePlanet\PluginCore\SharedKernel;
 
 /**
  * Trait JsonStringableTrait

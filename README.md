@@ -62,36 +62,19 @@ Retrieve official PDF documents (Invoices, Packing Slips, Credit Notes) directly
 A centralized service to fetch available payment method configurations from the WeArePlanet Portal, ensuring the shop systems have an up-to-date view of available payment methods.
 *   **[Read Payment Method Docs](docs/PaymentMethod/README.md)**
 
----
+### 9. Manual Task Tracking
+Check how many manual tasks (e.g. a manual risk review) are outstanding for a space, so the shop can surface a reminder to the merchant before a transaction can proceed.
+*   **[Read Manual Task Docs](docs/ManualTask/README.md)**
 
-## Documentation
-
-For a detailed look at how to implement each module, refer to the guides in the `docs/` directory:
-
--   **[Checkout & Transaction Flow](docs/Checkout/README.md)**: Handling the initial payment process.
--   **[Webhook Integration](docs/Webhook/README.md)**: Master guide for both Processing and Management.
--   **[Webhook Processor](docs/Webhook/Processor/README.md)**: Detailed guide for handling incoming notifications.
--   **[Webhook Management](docs/Webhook/Management/README.md)**: Programmatic setup of listeners in the WeArePlanet Portal.
--   **[Transaction Completion](docs/Completion/README.md)**: Capturing and voiding authorized transactions.
--   **[Recurring Charges](docs/Recurring/README.md)**: Implementing tokenized subsequent payments.
--   **[Refund Process](docs/Refund/README.md)**: Managing customer returns and credit notes.
--   **[Official Documents](docs/Document/README.md)**: Downloading invoices and other PDF assets.
--   **[Payment Method Service](docs/PaymentMethod/README.md)**: Retrieving and synchronizing payment methods configurations.
+### 10. Token Management
+Saved payment credentials for recurring/Merchant Initiated Transactions, with explicit control over how and when tokenization is applied at checkout.
+*   **[Read Token Docs](docs/Token/README.md)**
 
 ---
 
-## Examples
+## Documentation & Examples
 
-For a runnable example for each of the modules, refer to the `examples` subdirectories in each of the module directories.
-
--   **[Checkout & Transaction Flow](docs/Checkout/examples/)**: Handling the initial payment process.
--   **[Webhook Processor](docs/Webhook/Processor/example/)**: Simulating state transitions and concurrent processing.
--   **[Webhook Management](docs/Webhook/Management/example/)**: Lifecycle management (CLI scripts).
--   **[Transaction Completion](docs/Completion/examples/)**: Capturing and voiding authorized transactions.
--   **[Recurring Charges](docs/Recurring/examples/)**: Implementing tokenized subsequent payments.
--   **[Refund Process](docs/Refund/examples/)**: Managing customer returns and credit notes.
--   **[Official Documents](docs/Document/examples/)**: Downloading invoices and other PDF assets.
--   **[Payment Method Service](docs/PaymentMethod/examples/)**: Retrieving and synchronizing payment methods configurations.
+For detailed implementation guides and runnable examples for every module, see the [documentation index](docs/README.md).
 
 ---
 

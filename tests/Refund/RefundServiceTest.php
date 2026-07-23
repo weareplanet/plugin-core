@@ -7,8 +7,11 @@ namespace WeArePlanet\PluginCore\Tests\Refund;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use WeArePlanet\PluginCore\LineItem\LineItem;
+use WeArePlanet\PluginCore\LineItem\LineItemCollection;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Refund\Exception\InvalidRefundException;
+use WeArePlanet\PluginCore\Refund\LineItem\RefundLineItem;
+use WeArePlanet\PluginCore\Refund\LineItem\RefundLineItemCollection;
 use WeArePlanet\PluginCore\Refund\Refund;
 use WeArePlanet\PluginCore\Refund\RefundCollection;
 use WeArePlanet\PluginCore\Refund\RefundContext;
@@ -68,13 +71,16 @@ class RefundServiceTest extends TestCase
         $this->service->createRefund($spaceId, $context);
     }
 
-    public function testGetRefundableLineItemsFiltersCorrectly(): void
+    public function testGetRefundableLineItemsFallsBackToOriginalCart(): void
     {
+        $spaceId = 1;
+        $transactionId = 123;
+
         $product = new LineItem();
         $product->uniqueId = 'product-1';
-        $product->type = LineItem::TYPE_PRODUCT;
         $product->amountIncludingTax = 100.00;
 
+        // Discounts and zero-amount items must be filtered out of the fallback.
         $discount = new LineItem();
         $discount->uniqueId = 'discount-1';
         $discount->type = LineItem::TYPE_DISCOUNT;
@@ -82,16 +88,75 @@ class RefundServiceTest extends TestCase
 
         $freeGift = new LineItem();
         $freeGift->uniqueId = 'gift-1';
-        $freeGift->type = LineItem::TYPE_PRODUCT; // Even if product, price is 0
         $freeGift->amountIncludingTax = 0.00;
 
         $transaction = new Transaction();
+        $transaction->id = $transactionId;
         $transaction->lineItems = [$product, $discount, $freeGift];
 
-        $result = $this->service->getRefundableLineItems($transaction, );
+        // No successful refunds exist, so the original cart is refundable.
+        $this->gateway->expects($this->once())
+            ->method('findByTransaction')
+            ->with($spaceId, $transactionId)
+            ->willReturn(new RefundCollection());
 
-        $this->assertCount(1, $result, );
-        $this->assertSame($product, $result->first(), );
+        $this->transactionService->expects($this->once())
+            ->method('getTransaction')
+            ->with($spaceId, $transactionId)
+            ->willReturn($transaction);
+
+        $result = $this->service->getRefundableLineItems($spaceId, $transactionId);
+
+        $this->assertCount(1, $result);
+        $this->assertSame($product, $result->first());
+    }
+
+    public function testGetRefundableLineItemsReturnsLatestSuccessfulReducedState(): void
+    {
+        $spaceId = 1;
+        $transactionId = 123;
+
+        $older = new Refund();
+        $older->id = 1;
+        $older->state = State::SUCCESSFUL;
+        $older->createdOn = new \DateTimeImmutable('2026-01-01T10:00:00Z');
+        $older->reducedLineItems = new LineItemCollection();
+
+        $remainingItem = new LineItem();
+        $remainingItem->uniqueId = 'product-1';
+        $remainingItem->amountIncludingTax = 50.00;
+
+        // A discount in the reduced state must be filtered out client-side.
+        $remainingDiscount = new LineItem();
+        $remainingDiscount->uniqueId = 'discount-1';
+        $remainingDiscount->type = LineItem::TYPE_DISCOUNT;
+        $remainingDiscount->amountIncludingTax = -10.00;
+
+        $latest = new Refund();
+        $latest->id = 2;
+        $latest->state = State::SUCCESSFUL;
+        $latest->createdOn = new \DateTimeImmutable('2026-01-02T10:00:00Z');
+        $latest->reducedLineItems = new LineItemCollection($remainingItem, $remainingDiscount);
+
+        // A newer but FAILED refund must not win.
+        $failed = new Refund();
+        $failed->id = 3;
+        $failed->state = State::FAILED;
+        $failed->createdOn = new \DateTimeImmutable('2026-01-03T10:00:00Z');
+
+        $this->gateway->expects($this->once())
+            ->method('findByTransaction')
+            ->with($spaceId, $transactionId)
+            ->willReturn(new RefundCollection($older, $latest, $failed));
+
+        // The original transaction must not be fetched when a successful refund exists.
+        $this->transactionService->expects($this->never())
+            ->method('getTransaction');
+
+        $result = $this->service->getRefundableLineItems($spaceId, $transactionId);
+
+        $this->assertCount(1, $result);
+        $this->assertSame($remainingItem, $result->first());
     }
     public function testListRefunds(): void
     {
@@ -144,9 +209,9 @@ class RefundServiceTest extends TestCase
             amount: 10.00,
             merchantReference: 'ref-fail',
             type: Type::MERCHANT_INITIATED_ONLINE,
-            lineItems: [
-                ['uniqueId' => 'discount-1', 'quantity' => 1, 'amount' => 10.00],
-            ],
+            lineItems: new RefundLineItemCollection(
+                new RefundLineItem('discount-1', 1, 10.00),
+            ),
         );
 
         $this->expectException(InvalidRefundException::class);
@@ -178,9 +243,9 @@ class RefundServiceTest extends TestCase
             amount: 0.00,
             merchantReference: 'ref-fail',
             type: Type::MERCHANT_INITIATED_ONLINE,
-            lineItems: [
-                ['uniqueId' => 'free-1', 'quantity' => 1, 'amount' => 0.00],
-            ],
+            lineItems: new RefundLineItemCollection(
+                new RefundLineItem('free-1', 1, 0.00),
+            ),
         );
 
         $this->expectException(InvalidRefundException::class);
@@ -291,6 +356,7 @@ class RefundServiceTest extends TestCase
         $itemA->uniqueId = 'item-a';
         $itemA->quantity = 2;
         $itemA->amountIncludingTax = 50.00; // 25.00 each
+        $itemA->unitPriceIncludingTax = 25.00;
 
         $transaction = new Transaction();
         $transaction->id = $transactionId;
@@ -305,9 +371,9 @@ class RefundServiceTest extends TestCase
             amount: 60.00,
             merchantReference: 'ref-1',
             type: Type::MERCHANT_INITIATED_ONLINE,
-            lineItems: [
-                ['uniqueId' => 'item-a', 'quantity' => 0, 'amount' => 30.00], // (0*25) + (2*30) = 60.00. Exceeds 50.00
-            ],
+            lineItems: new RefundLineItemCollection(
+                new RefundLineItem('item-a', 0, 30.00), // (0*25) + (2*30) = 60.00. Exceeds 50.00
+            ),
         );
 
         $this->expectException(InvalidRefundException::class);
@@ -325,6 +391,7 @@ class RefundServiceTest extends TestCase
         $itemA->uniqueId = 'item-a';
         $itemA->quantity = 1;
         $itemA->amountIncludingTax = 50.00;
+        $itemA->unitPriceIncludingTax = 50.00;
 
         $transaction = new Transaction();
         $transaction->id = $transactionId;
@@ -339,9 +406,9 @@ class RefundServiceTest extends TestCase
             amount: 60.00,
             merchantReference: 'ref-1',
             type: Type::MERCHANT_INITIATED_ONLINE,
-            lineItems: [
-                ['uniqueId' => 'item-a', 'quantity' => 1, 'amount' => 60.00], // Exceeds 50.00
-            ],
+            lineItems: new RefundLineItemCollection(
+                new RefundLineItem('item-a', 1, 60.00), // Exceeds 50.00
+            ),
         );
 
         $this->expectException(InvalidRefundException::class);
