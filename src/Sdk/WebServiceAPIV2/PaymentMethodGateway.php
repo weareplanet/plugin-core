@@ -5,21 +5,25 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV2;
 
 use WeArePlanet\PluginCore\Localization\LocalizedString;
+use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
+use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethod;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodCollection;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodGatewayInterface;
 use WeArePlanet\PluginCore\Sdk\PaymentMethodMapperTrait;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
-use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
+use WeArePlanet\PluginCore\PaymentMethod\Exception\PaymentMethodException;
 use WeArePlanet\Sdk\Model\PaymentMethodConfiguration as SdkPaymentMethodConfiguration;
 use WeArePlanet\Sdk\Service\PaymentMethodConfigurationsService as SdkPaymentMethodConfigurationService;
 
 /**
  * Gateway implementation using the SDK V2.
  */
+#[LogContext(domain: 'sync')]
 class PaymentMethodGateway implements PaymentMethodGatewayInterface
 {
+    use DomainLoggerTrait;
     use PaymentMethodMapperTrait;
 
     /**
@@ -28,8 +32,9 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
      */
     public function __construct(
         private readonly SdkProvider $provider,
-        private readonly LoggerInterface $logger,
+        LoggerInterface $logger,
     ) {
+        $this->initializeLogger($logger);
     }
 
     /**
@@ -51,7 +56,7 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
                 'spaceId' => $spaceId,
                 'exception' => $e,
             ]);
-            throw new TransactionException(
+            throw new PaymentMethodException(
                 "Payment method {$id} not found: {$e->getMessage()}",
                 new LocalizedString('Payment method not found.'),
                 $e,
@@ -90,7 +95,7 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
                 'spaceId' => $spaceId,
                 'exception' => $e,
             ]);
-            throw new TransactionException(
+            throw new PaymentMethodException(
                 "Unable to fetch payment methods: {$e->getMessage()}",
                 new LocalizedString('Unable to fetch payment methods.'),
                 $e,

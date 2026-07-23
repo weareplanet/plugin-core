@@ -19,15 +19,20 @@ class TaxTest extends TestCase
     public function testTitleTooShort(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Tax title must be between 2 and 40 characters');
+        $this->expectExceptionMessage('Tax title must be at least 2 characters');
         new Tax('A', 19.0);
     }
 
-    public function testTitleTooLong(): void
+    public function testTitleTooLongIsSilentlyTruncated(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Tax title must be between 2 and 40 characters');
-        new Tax(str_repeat('A', 41), 19.0);
+        $tax = new Tax(str_repeat('A', 41), 19.0);
+        $this->assertSame(str_repeat('A', 40), $tax->title);
+    }
+
+    public function testTitleWayTooLongIsSilentlyTruncated(): void
+    {
+        $tax = new Tax(str_repeat('A', 100), 19.0);
+        $this->assertSame(str_repeat('A', 40), $tax->title);
     }
 
     public function testTitleExactBoundaryHigh(): void

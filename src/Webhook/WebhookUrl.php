@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Webhook;
 
-use WeArePlanet\PluginCore\Render\JsonStringableTrait;
+use WeArePlanet\PluginCore\SharedKernel\JsonStringableTrait;
 
 class WebhookUrl
 {

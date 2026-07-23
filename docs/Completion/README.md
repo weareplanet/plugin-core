@@ -20,6 +20,14 @@ This is a **Domain Entity** that represents the result of a completion operation
 **2. The Completion Gateway**
 Following the gateway pattern used in the checkout engine, the completion logic is encapsulated in the `TransactionCompletionGatewayInterface`. This allows the `TransactionService` to remain pure while delegating the SDK-specific calls to the infrastructure layer.
 
+**3. Capture Request (`CaptureRequest`)**
+`TransactionCompletionGatewayInterface::capture()` takes an optional third argument, a `CaptureRequest`, for line-item-level control over what gets captured:
+
+* **`CaptureRequest`**: A DTO holding a `LineItemCollection` of the items to capture (empty = capture the full remaining amount), an `isFinal` flag, and optional `externalId`/`merchantReference` metadata.
+* **`capture(spaceId, transactionId, ?CaptureRequest $request = null)`**: A single entry point for both full and partial captures. Omit `$request` (or pass one with an empty `LineItemCollection`) for a full capture; pass specific line items for a partial one.
+
+See [Partial & Full Captures with `CaptureRequest`](#partial--full-captures-with-capturerequest) below.
+
 ### Integration Guide
 
 #### Step 1: Configure the Service
@@ -31,7 +39,7 @@ use WeArePlanet\PluginCore\Transaction\Completion\TransactionCompletionService;
 use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\TransactionCompletionGateway;
 
 // Setup Gateways
-$completionGateway = new TransactionCompletionGateway($sdkProvider);
+$completionGateway = new TransactionCompletionGateway($sdkProvider, $logger);
 
 // Setup Service
 $completionService = new TransactionCompletionService(
@@ -87,6 +95,45 @@ try {
 }
 ```
 
+### Partial & Full Captures with `CaptureRequest`
+
+`CaptureRequest` lets you capture specific line items instead of the transaction's full authorized amount — e.g. when a shipment only fulfills part of an order. Build a `LineItemCollection` describing exactly what is being captured now, and pass it to the gateway's `capture()` method (not the Service, which only exposes the simple `capture($spaceId, $transactionId)`/`void()` calls with no line-item control):
+
+```php
+use WeArePlanet\PluginCore\LineItem\LineItem;
+use WeArePlanet\PluginCore\LineItem\LineItemCollection;
+use WeArePlanet\PluginCore\Transaction\Completion\CaptureRequest;
+
+// Describe what is being captured right now — e.g. 1 of the 2 units ordered.
+$item = new LineItem();
+$item->uniqueId = 'sku-123';
+$item->quantity = 1;
+$item->amountIncludingTax = 25.00; // the amount being captured for this line
+
+$lineItems = new LineItemCollection($item);
+
+$request = new CaptureRequest(
+    lineItems: $lineItems,
+    isFinal: false, // more captures will follow for the remaining unit(s)
+    merchantReference: 'shipment-1',
+);
+
+try {
+    $completion = $completionGateway->capture($spaceId, $transactionId, $request);
+    echo "Capture created! ID: " . $completion->id . ", State: " . $completion->state->value;
+} catch (CompletionException $e) {
+    $logger->error("Capture failed: " . $e->getMessage());
+}
+```
+
+For a full capture, simply omit the third argument:
+
+```php
+$completion = $completionGateway->capture($spaceId, $transactionId);
+```
+
+See [example/partial_capture.php](example/partial_capture.php) for a full runnable script.
+
 ### Flow Diagrams
 
 **Capture Flow:**
@@ -128,13 +175,73 @@ sequenceDiagram
 **Capture Example:**
 
 1. **Start Checkout**: Run `docs/Checkout/example/1_start_checkout.php`.
-2. **Confirm & Pay**: Run `docs/Checkout/example/3_confirm_checkout.php`. Authorize the transaction.
+2. **Confirm & Pay**: Run one of the `docs/Checkout/example/3_confirm_*.php` scripts matching your integration mode (e.g. `3_confirm_manual.php`). Authorize the transaction.
 3. **Capture**: Run `docs/Completion/example/capture.php`
     * You will need to manually set the `transactionId` in the script as it does not automatically pick up the session.
 
 **Void Example:**
 
 1. **Start Checkout**: Run `docs/Checkout/example/1_start_checkout.php`.
-2. **Confirm & Pay**: Run `docs/Checkout/example/3_confirm_checkout.php`. Authorize the transaction.
+2. **Confirm & Pay**: Run one of the `docs/Checkout/example/3_confirm_*.php` scripts matching your integration mode (e.g. `3_confirm_manual.php`). Authorize the transaction.
 3. **Void**: Run `docs/Completion/example/void.php`.
     * You will need to manually set the `transactionId` in the script as it does not automatically pick up the session.
+
+**Partial Capture Example:**
+
+1. **Start Checkout**: Run `docs/Checkout/example/1_start_checkout.php`.
+2. **Confirm & Pay**: Run one of the `docs/Checkout/example/3_confirm_*.php` scripts matching your integration mode (e.g. `3_confirm_manual.php`). Authorize the transaction.
+3. **Partial Capture**: Run `docs/Completion/example/partial_capture.php [transaction_id]` to capture a single line item via `CaptureRequest`.
+
+**Invoice Example (Reading the Captured Reality):**
+
+1. Complete a capture as described above.
+2. Run `docs/Completion/example/fetch_invoice.php [transaction_id]` to fetch the invoice that resulted from the capture.
+
+See **[Invoice.md](Invoice.md)** for the full documentation of the read-only `Transaction\Invoice` domain (states, gateway methods, and how to locate the invoice for a transaction).
+
+## State Capability Predicates
+
+Rather than hardcoding state comparisons in your shop's integration code, `Transaction\State` and `Transaction\Invoice\State` expose capability predicates that answer common business questions directly:
+
+```php
+use WeArePlanet\PluginCore\Transaction\State as TransactionState;
+
+if ($transaction->state->isPaidLike()) {
+    // AUTHORIZED, COMPLETED, or FULFILL: money is secured — safe to ship/fulfill.
+}
+
+if ($transaction->state->allowsInvoiceManipulation()) {
+    // AUTHORIZED only: the portal hasn't generated its own invoice yet, so
+    // your shop's local bookkeeping can still freely create or cancel one.
+}
+```
+
+Before starting another capture, check whether the transaction's most recent invoice is still unresolved:
+
+```php
+if ($invoice->state->blocksCapture()) {
+    // OPEN or OVERDUE: a prior invoice hasn't been resolved yet — wait before capturing again.
+}
+```
+
+See **[Document documentation](../Document/README.md)** for the download-related predicates (`isInvoiceDownloadAllowed()`, `isPackingSlipDownloadAllowed()`).
+
+## Verifying an Existing Completion
+
+Completions are processed **asynchronously**: `capture()` may return a completion that is still `PENDING`, and the portal reports the final outcome later via a `TransactionCompletion` webhook. See [Webhook Processor](../Webhook/Processor/README.md) for handling that incoming notification. The webhook payload carries the completion ID — use the gateway's read methods to verify the actual state:
+
+```php
+// find(): returns null when the completion does not exist (404).
+$completion = $completionGateway->find($spaceId, $completionId);
+
+// get(): throws a CompletionException when it cannot be read.
+$completion = $completionGateway->get($spaceId, $completionId);
+
+echo $completion->state->value; // e.g. SUCCESSFUL, FAILED, PENDING
+```
+
+This is primarily intended for **asynchronous webhook verification** — re-reading the source of truth from the API instead of trusting the webhook payload. All failures are wrapped in the domain `CompletionException`.
+
+**Completion Verification Example:**
+
+Run `docs/Completion/example/find_completion.php [completion_id]` after a capture to re-read the completion by its ID.

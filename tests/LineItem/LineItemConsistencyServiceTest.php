@@ -56,6 +56,9 @@ class LineItemConsistencyServiceTest extends TestCase
             ->with(
                 $this->stringContains("Line item discrepancy detected; appending 'Rounding Adjustment' line item to satisfy gateway validation."),
                 [
+                    'domain' => 'transaction',
+                    'subdomain' => 'checkout',
+                    'source' => 'core',
                     'expectedAmount' => 10.00,
                     'calculatedAmount' => 9.98,
                     'difference' => 0.02,
@@ -103,6 +106,7 @@ class LineItemConsistencyServiceTest extends TestCase
         $items = $result->all();
         $adjustment = end($items);
         $this->assertEquals(-0.02, $adjustment->amountIncludingTax);
+        $this->assertEquals(LineItem::TYPE_DISCOUNT, $adjustment->type);
     }
 
     public function testLargeDiscrepancyThrowsException(): void
@@ -127,6 +131,9 @@ class LineItemConsistencyServiceTest extends TestCase
             ->with(
                 $this->stringContains("Line item discrepancy detected but consistency enforcement is DISABLED."),
                 [
+                    'domain' => 'transaction',
+                    'subdomain' => 'checkout',
+                    'source' => 'core',
                     'expectedAmount' => 10.00,
                     'calculatedAmount' => 9.99,
                     'difference' => 0.01,

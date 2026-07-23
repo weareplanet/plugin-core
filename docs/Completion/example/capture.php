@@ -41,7 +41,7 @@ try {
 }
 
 // Setup Services
-$completionGateway = new TransactionCompletionGateway($sdkProvider);
+$completionGateway = new TransactionCompletionGateway($sdkProvider, $logger);
 
 $completionService = new TransactionCompletionService($completionGateway, $logger);
 

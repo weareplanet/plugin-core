@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Document;
 
+use WeArePlanet\PluginCore\Document\Exception\DocumentException;
+
 /**
  * Interface for retrieving rendered documents.
  */

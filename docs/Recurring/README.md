@@ -99,7 +99,7 @@ A working example is provided in the `example` directory.
 > The recurring payment example requires a transaction that was created **with tokenization enabled** and has already been paid. You must run the updated Checkout examples first to create such a transaction.
 
 1. **Start Checkout**: Run `docs/Checkout/example/1_start_checkout.php` (now includes `FORCE_CREATION` tokenization).
-2. **Confirm & Pay**: Run `docs/Checkout/example/3_confirm_checkout.php` and follow the link to pay.
+2. **Confirm & Pay**: Run one of the `docs/Checkout/example/3_confirm_*.php` scripts matching your integration mode (e.g. `3_confirm_manual.php`) and follow the link to pay.
 3. **Trigger Recurring**: Run `docs/Recurring/example/recurring.php`.
     * This script automatically detects the active session from the Checkout example.
     * Alternatively, you can pass the transaction ID manually:

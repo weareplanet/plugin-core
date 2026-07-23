@@ -6,7 +6,7 @@ This directory contains documentation and examples for working with webhooks in 
 
 ### [Webhook Processor](Processor/README.md)
 
-Contains the core logic for **processing incoming webhooks** in your shop plugin. This is what you implementation to handle state changes, locking, and business logic (Commands).
+Contains the core logic for **processing incoming webhooks** in your shop plugin. This is what you implement to handle state changes, locking, and business logic (Commands).
 
 - [Integration Guide](Processor/README.md)
 - [Architecture & Concurrency Control](Processor/ARCHITECTURE.md)

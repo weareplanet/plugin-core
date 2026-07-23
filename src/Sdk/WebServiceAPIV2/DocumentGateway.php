@@ -7,9 +7,11 @@ namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV2;
 use WeArePlanet\PluginCore\Document\DocumentGatewayInterface;
 use WeArePlanet\PluginCore\Document\RenderedDocument;
 use WeArePlanet\PluginCore\Localization\LocalizedString;
+use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
+use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
-use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
+use WeArePlanet\PluginCore\Document\Exception\DocumentException;
 use WeArePlanet\Sdk\Model\RenderedDocument as SdkRenderedDocument;
 use WeArePlanet\Sdk\Service\RefundsService as SdkRefundsService;
 use WeArePlanet\Sdk\Service\TransactionCompletionsService as SdkTransactionCompletionsService;
@@ -19,8 +21,10 @@ use WeArePlanet\Sdk\Service\TransactionsService as SdkTransactionsService;
 /**
  * Gateway for retrieving documents using the SDK.
  */
+#[LogContext(domain: 'documentation')]
 class DocumentGateway implements DocumentGatewayInterface
 {
+    use DomainLoggerTrait;
     private SdkTransactionInvoicesService $transactionInvoicesService;
     private SdkTransactionsService $transactionsService;
     private SdkRefundsService $refundsService;
@@ -28,8 +32,9 @@ class DocumentGateway implements DocumentGatewayInterface
 
     public function __construct(
         private readonly SdkProvider $sdkProvider,
-        private readonly LoggerInterface $logger,
+        LoggerInterface $logger,
     ) {
+        $this->initializeLogger($logger);
         $this->transactionInvoicesService = $this->sdkProvider->getService(SdkTransactionInvoicesService::class);
         $this->transactionsService = $this->sdkProvider->getService(SdkTransactionsService::class);
         $this->refundsService = $this->sdkProvider->getService(SdkRefundsService::class);
@@ -57,7 +62,7 @@ class DocumentGateway implements DocumentGatewayInterface
 
             if (empty($completions)) {
                 // Ensure a completion exists, as invoices are typically generated upon completion.
-                throw new TransactionException(
+                throw new DocumentException(
                     "No completion found for transaction $transactionId in space $spaceId when fetching invoice.",
                     new LocalizedString('No invoice found for the transaction.'),
                 );
@@ -70,7 +75,7 @@ class DocumentGateway implements DocumentGatewayInterface
             }
 
             if (empty($completionData) || count($completionData) === 0) {
-                throw new TransactionException(
+                throw new DocumentException(
                     "No completion data retrieved for transaction $transactionId in space $spaceId when fetching invoice.",
                     new LocalizedString('No completion found for the transaction.'),
                 );
@@ -89,7 +94,7 @@ class DocumentGateway implements DocumentGatewayInterface
             }
 
             if (empty($invoices) || count($invoices) === 0) {
-                throw new TransactionException(
+                throw new DocumentException(
                     "No invoice found linked to completion $completionId for transaction $transactionId in space $spaceId.",
                     new LocalizedString('No invoice found linked to the transaction completion.'),
                 );
@@ -99,9 +104,15 @@ class DocumentGateway implements DocumentGatewayInterface
             $sdkDocument = $this->transactionInvoicesService->getPaymentTransactionsInvoicesIdDocument($invoice->getId(), $spaceId);
 
             return $this->mapSdkDocument($sdkDocument);
-        } catch (\Exception $e) {
-            $this->logger->error("DocumentGateway: Failed to get invoice.", ['error' => $e->getMessage()]);
+        } catch (DocumentException $e) {
             throw $e;
+        } catch (\Throwable $e) {
+            $this->logger->error("DocumentGateway: Failed to get invoice.", ['exception' => $e]);
+            throw new DocumentException(
+                "Failed to get invoice document for transaction $transactionId: " . $e->getMessage(),
+                new LocalizedString('The invoice document could not be retrieved.'),
+                $e,
+            );
         }
     }
 
@@ -118,9 +129,13 @@ class DocumentGateway implements DocumentGatewayInterface
         try {
             $sdkDocument = $this->transactionsService->getPaymentTransactionsIdPackingSlipDocument($transactionId, $spaceId);
             return $this->mapSdkDocument($sdkDocument);
-        } catch (\Exception $e) {
-            $this->logger->error("DocumentGateway: Failed to get packing slip.", ['error' => $e->getMessage()]);
-            throw $e;
+        } catch (\Throwable $e) {
+            $this->logger->error("DocumentGateway: Failed to get packing slip.", ['exception' => $e]);
+            throw new DocumentException(
+                "Failed to get packing slip for transaction $transactionId: " . $e->getMessage(),
+                new LocalizedString('The packing slip could not be retrieved.'),
+                $e,
+            );
         }
     }
 
@@ -137,9 +152,13 @@ class DocumentGateway implements DocumentGatewayInterface
         try {
             $sdkDocument = $this->refundsService->getPaymentRefundsIdDocument($refundId, $spaceId);
             return $this->mapSdkDocument($sdkDocument);
-        } catch (\Exception $e) {
-            $this->logger->error("DocumentGateway: Failed to get refund credit note.", ['error' => $e->getMessage()]);
-            throw $e;
+        } catch (\Throwable $e) {
+            $this->logger->error("DocumentGateway: Failed to get refund credit note.", ['exception' => $e]);
+            throw new DocumentException(
+                "Failed to get credit note for refund $refundId: " . $e->getMessage(),
+                new LocalizedString('The credit note could not be retrieved.'),
+                $e,
+            );
         }
     }
 

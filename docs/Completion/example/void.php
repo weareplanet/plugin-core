@@ -30,7 +30,7 @@ try {
 }
 
 // Setup Services
-$gateway = new TransactionCompletionGateway($sdkProvider);
+$gateway = new TransactionCompletionGateway($sdkProvider, $logger);
 $service = new TransactionCompletionService($gateway, $logger);
 
 // Void Transaction

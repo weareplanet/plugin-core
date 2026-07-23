@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV2;
 
 use WeArePlanet\PluginCore\Localization\LocalizedString;
+use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
+use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Sdk\TokenMapperTrait;
@@ -18,8 +20,10 @@ use WeArePlanet\Sdk\Service\TransactionsService as SdkTransactionsService;
 /**
  * SDK implementation of the TokenGatewayInterface for API V2.
  */
+#[LogContext(domain: 'transaction', subdomain: 'recurring')]
 class TokenGateway implements TokenGatewayInterface
 {
+    use DomainLoggerTrait;
     use TokenMapperTrait;
 
     /**
@@ -35,8 +39,9 @@ class TokenGateway implements TokenGatewayInterface
      */
     public function __construct(
         private readonly SdkProvider $sdkProvider,
-        private readonly LoggerInterface $logger,
+        LoggerInterface $logger,
     ) {
+        $this->initializeLogger($logger);
         $this->transactionsService = $this->sdkProvider->getService(SdkTransactionsService::class);
     }
 
@@ -81,7 +86,7 @@ class TokenGateway implements TokenGatewayInterface
             }
 
             return $this->mapToToken($sdkToken, $spaceId);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             if (!($e instanceof MissingTokenException)) {
                 $this->logger->error(
                     'Failed to fetch token for transaction: {errorMessage}',

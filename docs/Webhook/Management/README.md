@@ -1,6 +1,6 @@
 # Webhook Management
 
-The Webhook Management module allows to programmatically manage webhook subscriptions in the Portal and validate incoming payloads.
+The Webhook Management module allows developers to programmatically manage webhook subscriptions in the Portal and validate incoming payloads.
 
 ## Overview
 
@@ -33,12 +33,13 @@ use WeArePlanet\PluginCore\Webhook\WebhookService;
 $config = new WebhookConfig(
     url: 'https://your-shop.com/webhook/callback',
     name: 'Order Authorization Listener',
-    entityId: \WeArePlanet\PluginCore\Webhook\Enum\WebhookListener::TRANSACTION->value,
-    eventStateId: \WeArePlanet\PluginCore\Transaction\State::AUTHORIZED->value
+    entity: \WeArePlanet\PluginCore\Webhook\Enum\WebhookListener::TRANSACTION,
+    eventStates: [\WeArePlanet\PluginCore\Transaction\State::AUTHORIZED->value]
 );
 
+// installWebhook returns the created WebhookUrl, so you can reference it
+// (e.g. its id) without re-querying the space.
 $webhookUrl = $webhookService->installWebhook($spaceId, $config);
-echo "Installed Webhook URL: " . $webhookUrl->url;
 ```
 
 ## Management Operations
@@ -53,15 +54,10 @@ $webhookService->updateWebhookUrl($spaceId, $webhookUrlId, 'https://new-url.com/
 
 ### Uninstallation
 
-Correctly removes both the listener and the URL definition. It looks up the associated listener using the entity and state definitions to ensure clean removal.
+Deletes the listener, then the URL definition. If listener deletion fails, the operation stops there and the URL is left in place, so you can safely retry.
 
 ```php
-$webhookService->uninstallWebhook(
-    $spaceId,
-    $webhookUrlId,
-    \WeArePlanet\PluginCore\Webhook\Enum\WebhookListener::TRANSACTION->value,
-    \WeArePlanet\PluginCore\Transaction\State::AUTHORIZED->value
-);
+$webhookService->uninstallWebhook($spaceId, $webhookUrlId, $listenerId);
 ```
 
 ## Usage Example

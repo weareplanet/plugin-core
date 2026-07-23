@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\LineItem;
 
+use WeArePlanet\PluginCore\Currency\CurrencyRoundingService;
 use WeArePlanet\PluginCore\LineItem\Exception\LineItemConsistencyException;
 use WeArePlanet\PluginCore\LineItem\LineItemCollection;
 use WeArePlanet\PluginCore\Localization\LocalizedString;
+use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
+use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Settings\Settings;
 
@@ -18,8 +21,10 @@ use WeArePlanet\PluginCore\Settings\Settings;
  * "Total Mismatch" errors. It also handles edge cases like negative transaction totals
  * caused by aggressive discounting.
  */
+#[LogContext(domain: 'transaction', subdomain: 'checkout')]
 class LineItemConsistencyService
 {
+    use DomainLoggerTrait;
     private const ADJUSTMENT_NAME = 'Rounding Adjustment';
     private const ADJUSTMENT_SKU = 'rounding-adjustment';
     private const MAX_ALLOWED_DIFFERENCE = 0.10;
@@ -30,8 +35,9 @@ class LineItemConsistencyService
      */
     public function __construct(
         private readonly Settings $settings,
-        private readonly LoggerInterface $logger,
+        LoggerInterface $logger,
     ) {
+        $this->initializeLogger($logger);
     }
 
     /**
@@ -43,7 +49,7 @@ class LineItemConsistencyService
      *
      * @param LineItem[] $lineItems The original line items from the shop.
      * @param float $expectedTotal The grand total calculated by the shop.
-     * @param string $currencyCode The currency of the transaction.
+     * @param string $currencyCode The currency of the transaction, used to round to its correct number of decimal places.
      * @param int|null $spaceId The unique space identifier for log tracing.
      * @param int|null $transactionId The unique transaction identifier for log tracing.
      * @return LineItemCollection The consistent list of line items.
@@ -56,7 +62,7 @@ class LineItemConsistencyService
         ?int $spaceId = null,
         ?int $transactionId = null,
     ): LineItemCollection {
-        $calculatedTotal = $this->calculateSum($lineItems);
+        $calculatedTotal = $this->calculateSum($lineItems, $currencyCode);
         $difference = $expectedTotal - $calculatedTotal;
 
         // Exact Match Handling
@@ -73,7 +79,7 @@ class LineItemConsistencyService
                 [
                     'expectedAmount' => $expectedTotal,
                     'calculatedAmount' => $calculatedTotal,
-                    'difference' => round($difference, 2),
+                    'difference' => CurrencyRoundingService::round($difference, $currencyCode),
                     'spaceId' => $spaceId,
                     'transactionId' => $transactionId,
                 ],
@@ -90,7 +96,7 @@ class LineItemConsistencyService
         if (abs($difference) > self::MAX_ALLOWED_DIFFERENCE) {
             $threshold = self::MAX_ALLOWED_DIFFERENCE;
             $this->logger->error("Rounding difference exceeds safety threshold; aborting.", [
-                'difference' => round($difference, 2),
+                'difference' => CurrencyRoundingService::round($difference, $currencyCode),
                 'threshold' => $threshold,
             ]);
             throw new LineItemConsistencyException(
@@ -106,19 +112,29 @@ class LineItemConsistencyService
             [
                 'expectedAmount' => $expectedTotal,
                 'calculatedAmount' => $calculatedTotal,
-                'difference' => round($difference, 2),
+                'difference' => CurrencyRoundingService::round($difference, $currencyCode),
                 'spaceId' => $spaceId,
                 'transactionId' => $transactionId,
             ],
         );
 
+        // Intentionally no tax on the adjustment item. Tax on a penny-level
+        // discrepancy (e.g. $0.01) mathematically rounds to zero anyway, so
+        // there is nothing meaningful to charge. The gateway's actual
+        // requirement here is just that the line items sum to the grand
+        // total — it is not acting as a tax authority. Reverse-engineering a
+        // tax rate for this adjustment (especially on mixed-tax-rate orders)
+        // is fragile and a common cause of strict gateway validation
+        // failures; sending it tax-free is the safest, industry-standard
+        // approach.
         $adjustmentItem = new LineItem();
         $adjustmentItem->uniqueId = self::ADJUSTMENT_SKU;
         $adjustmentItem->sku = self::ADJUSTMENT_SKU;
         $adjustmentItem->name = self::ADJUSTMENT_NAME;
         $adjustmentItem->quantity = 1;
-        $adjustmentItem->amountIncludingTax = round($difference, 2);
-        $adjustmentItem->type = LineItem::TYPE_FEE;
+        $adjustmentItem->amountIncludingTax = CurrencyRoundingService::round($difference, $currencyCode);
+        $adjustmentItem->unitPriceIncludingTax = CurrencyRoundingService::round($difference, $currencyCode);
+        $adjustmentItem->type = $difference < 0 ? LineItem::TYPE_DISCOUNT : LineItem::TYPE_FEE;
         $adjustmentItem->shippingRequired = false;
 
         $lineItems[] = $adjustmentItem;
@@ -182,9 +198,10 @@ class LineItemConsistencyService
      * Calculates the internal sum of all line items based on configured rounding rules.
      *
      * @param LineItem[] $lineItems The items to sum.
+     * @param string $currencyCode The currency code, used to round to the correct number of decimal places.
      * @return float The calculated total.
      */
-    private function calculateSum(array $lineItems): float
+    private function calculateSum(array $lineItems, string $currencyCode): float
     {
         $strategy = $this->settings->getLineItemRoundingStrategy();
 
@@ -194,13 +211,13 @@ class LineItemConsistencyService
         foreach ($lineItems as $item) {
             // Some shops round each line item price before summing, while others round the final total.
             if ($strategy === RoundingStrategy::BY_LINE_ITEM) {
-                $sum += round($item->amountIncludingTax, 2);
+                $sum += CurrencyRoundingService::round($item->amountIncludingTax, $currencyCode);
             } else {
                 $sum += $item->amountIncludingTax;
             }
         }
 
-        $result = round($sum, 2);
+        $result = CurrencyRoundingService::round($sum, $currencyCode);
         $this->logger->debug("Calculated line item total.", ['total' => $result]);
 
         return $result;

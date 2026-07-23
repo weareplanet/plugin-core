@@ -12,15 +12,15 @@ The Refund process involves:
 
 ## Key Components
 
-- **RefundService**: The main entry point. Validates and executes refunds.
+- **RefundService**: The main entry point. Validates and executes refunds, and computes what remains refundable (`getRefundableLineItems`).
 - **RefundContext**: A DTO containing all necessary data to create a refund (Amount, Line Items, Type, etc.).
-- **RefundGatewayInterface**: Abstraction for the underlying API interaction.
+- **RefundGatewayInterface**: Abstraction for the underlying API interaction. Also supports direct lookups (`findById`, `findByTransaction`).
 
 ## Partial Refunds & Price Reductions
 
 When performing a partial refund on specific line items, it is crucial to understand how the **Reduction Amount** is calculated.
 
-The field `amount` in the `lineItems` array of `RefundContext` corresponds to the **Unit Price Reduction**, NOT the total reduction for that item.
+`RefundContext::$lineItems` is a `RefundLineItemCollection` of `RefundLineItem` objects. The `unitPriceReduction` property on `RefundLineItem` corresponds to the **Unit Price Reduction**, NOT the total reduction for that item.
 
 **Formula:**
 
@@ -38,22 +38,41 @@ You sold 2 items of "Swiss Watch" at 150.00 each. You want to refund 20.00 total
 Calculation for `Unit Price Reduction`:
 `20.00 = (0 * 150.00) + (2 * X)` -> `20.00 = 2X` -> `X = 10.00`
 
-So you must pass `quantity: 0` and `amount: 10.00` in the line item context.
+So you must pass `returnedQuantity: 0` and `unitPriceReduction: 10.00` on the `RefundLineItem`.
 
 ```php
+use WeArePlanet\PluginCore\Refund\LineItem\RefundLineItem;
+use WeArePlanet\PluginCore\Refund\LineItem\RefundLineItemCollection;
+
 $context = new RefundContext(
     transactionId: 123,
     amount: 20.00, // Total Refund Amount
     // ...
-    lineItems: [
-        [
-            'uniqueId' => 'sku-123',
-            'quantity' => 0,      // Returning 0 physical items
-            'amount'   => 10.00   // Reducing unit price by 10.00 (x 2 items = 20.00)
-        ]
-    ]
+    lineItems: new RefundLineItemCollection(
+        new RefundLineItem(
+            uniqueId: 'sku-123',
+            returnedQuantity: 0,      // Returning 0 physical items
+            unitPriceReduction: 10.00, // Reducing unit price by 10.00 (x 2 items = 20.00)
+        ),
+    ),
 );
 ```
+
+## Avoiding Floating-Point Errors: Use `unitPriceIncludingTax`
+
+The formula above requires a **per-unit price**. Do **not** derive it by dividing `$lineItem->amountIncludingTax / $lineItem->quantity` — floating-point division introduces rounding errors (e.g. `29.99 / 3 = 9.996666...`) that the gateway API will reject when the reduction amounts don't reconcile exactly with the total.
+
+`LineItem` exposes the unit price directly, exactly as reported by the API:
+
+```php
+public float $unitPriceIncludingTax;
+```
+
+Always use `$lineItem->unitPriceIncludingTax` when calculating a per-item reduction — never division.
+
+**Where do these line items come from?** Don't read them from the original `Transaction`. A transaction can be partially captured, and the original cart doesn't reflect that. Fetch the **[Transaction Invoice](../Completion/Invoice.md)** — the captured reality — either directly via the `InvoiceGateway`, or through `RefundService::getRefundableLineItems()`, which resolves it for you (see below).
+
+See **[example/refund_quantity_and_stock.php](example/refund_quantity_and_stock.php)** for the full, correct pattern end to end.
 
 ## Usage
 
@@ -71,7 +90,8 @@ $context = new RefundContext(
     amount: 50.00,
     merchantReference: 'refund-ref-1',
     type: TypeEnum::MERCHANT_INITIATED_ONLINE,
-    lineItems: [] // Optional: For partial specific items
+    // lineItems defaults to an empty RefundLineItemCollection: for partial, specific-item
+    // refunds, pass a RefundLineItemCollection of RefundLineItem objects instead.
 );
 
 try {
@@ -110,10 +130,58 @@ foreach ($refunds as $refund) {
 }
 ```
 
-## Example
+## Fetching a Single Refund (Webhooks)
 
-See the [example](example/) directory for a fully working CLI script that demonstrates:
+Webhook payloads (e.g., a `Refund` state change) carry a **refund ID but no transaction ID**. See [Webhook Processor](../Webhook/Processor/README.md) for handling the incoming notification itself. Use the gateway's `findById` to resolve the full refund directly:
 
-1. Full Refund
-2. Validation Error (Amount too high)
-3. Partial Refund
+```php
+$refund = $refundGateway->findById($spaceId, $refundId);
+
+echo "Refund ID: " . $refund->id;
+echo "Transaction ID: " . $refund->transactionId; // resolved from the API payload
+echo "State: " . $refund->state->value;
+
+// The refunded line items (reductions), when reported by the API:
+foreach ($refund->lineItems ?? [] as $item) {
+    echo $item->name . ": " . $item->amountIncludingTax;
+}
+```
+
+Errors throw a `RefundException`.
+
+## Determining What Remains Refundable
+
+Shop plugins should not calculate remaining refundable items manually. The API reports the **post-refund cart state** on every refund (`$refund->reducedLineItems`), and `RefundService` turns that into a one-call state engine:
+
+```php
+$refundable = $refundService->getRefundableLineItems($spaceId, $transactionId);
+
+foreach ($refundable as $item) {
+    echo $item->name . ": " . $item->amountIncludingTax . " (qty " . $item->quantity . ")";
+}
+```
+
+How it resolves the state:
+
+1. The **most recent SUCCESSFUL refund** wins — its `reducedLineItems` already describe what remains (compared by `createdOn`, falling back to the sequential ID).
+2. If no successful refund exists yet, the **original transaction cart** is returned.
+3. If a successful refund exists but the API did not report its reduced state, an **empty collection** is returned — understating is the safe failure mode.
+
+In every case, discounts and zero/negative-amount items are filtered out, since they cannot be refunded individually.
+
+## Example Scripts
+
+The [example](example/) directory contains two separate scripts demonstrating different refund models:
+
+### General Lifecycle and Amount-Based Refunds
+Refer to **[example/refund_lifecycle_and_amount.php](example/refund_lifecycle_and_amount.php)** to see general transaction-level flows, including:
+- Attempting a refund greater than the authorized amount to test validation logic.
+- Initiating flat price-reduction adjustments on line items without returning inventory (`quantity: 0`).
+- Refunding the full remaining transaction balance.
+- Fetching single refunds by ID (critical for webhook handlers that receive a refund ID but no transaction context).
+- Listing current transaction refunds and remaining refundable items.
+
+### Quantity and Stock-Returning Refunds
+Refer to **[example/refund_quantity_and_stock.php](example/refund_quantity_and_stock.php)** for the safe pattern when returning physical units of a line item (returning stock, `quantity > 0`). This covers:
+- Sourcing items correctly from the invoice-backed refundable state via `getRefundableLineItems()`.
+- Safe calculation of the total reduction using the `unitPriceIncludingTax` field to prevent float division rounding issues that would cause API rejections.

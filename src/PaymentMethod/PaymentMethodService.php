@@ -4,14 +4,18 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\PaymentMethod;
 
+use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
+use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodCollection;
 
 /**
  * Service for managing payment methods.
  */
+#[LogContext(domain: 'sync')]
 class PaymentMethodService
 {
+    use DomainLoggerTrait;
     /**
      * @param PaymentMethodGatewayInterface $gateway The gateway to fetch payment methods.
      * @param PaymentMethodRepositoryInterface $repository The repository to store payment methods.
@@ -20,8 +24,9 @@ class PaymentMethodService
     public function __construct(
         private readonly PaymentMethodGatewayInterface $gateway,
         private readonly PaymentMethodRepositoryInterface $repository,
-        private readonly LoggerInterface $logger,
+        LoggerInterface $logger,
     ) {
+        $this->initializeLogger($logger);
     }
 
     /**

@@ -6,11 +6,14 @@ error_reporting(E_ALL & ~E_DEPRECATED);
 
 
 use WeArePlanet\PluginCore\Address\Address;
+use WeArePlanet\PluginCore\Customer\PersonalDetails;
 use WeArePlanet\PluginCore\LineItem\LineItem;
+use WeArePlanet\PluginCore\LineItem\LineItemCollection;
 use WeArePlanet\PluginCore\LineItem\LineItemConsistencyService;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\TransactionGateway;
 use WeArePlanet\PluginCore\Settings\Settings;
+use WeArePlanet\PluginCore\SharedKernel\Url;
 use WeArePlanet\PluginCore\Tax\Tax;
 use WeArePlanet\PluginCore\Token\TokenizationMode as TokenizationModeEnum;
 use WeArePlanet\PluginCore\Transaction\TransactionContext;
@@ -55,8 +58,8 @@ $context->currencyCode = 'CHF';
 $context->language = 'en-US';
 $context->customerId = 'guest-123';
 $context->transactionId = $persistence->getTransactionId();
-$context->successUrl = 'https://example.com/success';
-$context->failedUrl = 'https://example.com/fail';
+$context->successUrl = new Url('https://example.com/success');
+$context->failedUrl = new Url('https://example.com/fail');
 
 // Enable tokenization so the API creates a token with payment credentials
 // when the transaction completes. This is required for recurring payments (MIT).
@@ -64,14 +67,18 @@ $context->failedUrl = 'https://example.com/fail';
 $context->tokenizationMode = TokenizationModeEnum::FORCE_CREATION;
 
 $billing = new Address();
-$billing->givenName = 'John';
-$billing->familyName = 'Doe';
 $billing->street = 'Bahnhofstrasse 1';
 $billing->city = 'Zurich';
 $billing->postcode = '8000';
 $billing->country = 'CH';
-$billing->emailAddress = 'test@example.com';
 $context->billingAddress = $billing;
+
+// Identity data lives on the Customer domain objects, not the Address.
+$context->personalDetails = new PersonalDetails(
+    emailAddress: 'test@example.com',
+    familyName: 'Doe',
+    givenName: 'John',
+);
 
 $item = new LineItem();
 $item->uniqueId = 'sku-123';
@@ -81,7 +88,7 @@ $item->quantity = 1;
 $item->amountIncludingTax = 150.00;
 $item->type = LineItem::TYPE_PRODUCT;
 $item->addTax(new Tax('VAT', 7.7));
-$context->lineItems = [$item];
+$context->lineItems = new LineItemCollection($item);
 $context->expectedGrandTotal = 150.00;
 
 // Execute Upsert

@@ -3,15 +3,20 @@
 namespace MyPlugin\ExampleRefundImplementation;
 
 /**
- * Refund Example
+ * Refund Lifecycle and Amount-Based Example
  * 
- * This script demonstrates the Refund functionality:
- * Validates refund (fails if amount too high).
- * Creating a Partial Refund.
- * Creating a Full Refund (of remaining amount).
+ * This script demonstrates general transaction-level and amount-based refund operations:
+ * - Validates refund limits (attempts an excessive refund to trigger a validation error).
+ * - Creates a partial refund as a price reduction adjustment (refunding money without returning stock, quantity = 0).
+ * - Creates a full refund of the remaining transaction balance.
+ * - Fetches a single refund by ID (simulating a webhook processor lookup).
+ * - Lists existing refunds and remaining refundable line items.
+ * 
+ * NOTE: For quantity-based partial refunds where physical units of stock are being returned,
+ * see refund_quantity_and_stock.php.
  * 
  * USAGE:
- * php refund.php [session_file_or_dir] [transaction_id]
+ * php refund_lifecycle_and_amount.php [session_file_or_dir] [transaction_id]
  */
 
 error_reporting(E_ALL & ~E_DEPRECATED);
@@ -68,6 +73,8 @@ $refundGateway = new RefundGateway($sdkProvider, $logger);
 // OR just instantiate the REAL TransactionService if we can cheaply.
 // Let's rely on standard instantiation.
 use WeArePlanet\PluginCore\LineItem\LineItemConsistencyService;
+use WeArePlanet\PluginCore\Refund\LineItem\RefundLineItem;
+use WeArePlanet\PluginCore\Refund\LineItem\RefundLineItemCollection;
 
 $consistency = new LineItemConsistencyService($settings, $logger);
 
@@ -143,8 +150,8 @@ try {
     echo "FAILED: Caught unexpected exception: " . $e->getMessage() . "\n";
 }
 
-// TEST: Partial Refund
-echo "\n--- TEST 2: Partial Refund (10.00 per unit for Swiss Watch) ---\n";
+// TEST: Partial Refund as a price-reduction adjustment (no stock returned)
+echo "\n--- TEST 2: Partial Refund (Price Reduction on Swiss Watch) ---\n";
 
 // Find the Swiss Watch line item to determine valid refund amount
 $targetSku = 'sku-123';
@@ -175,18 +182,19 @@ if (!$targetItem) {
         amount: $totalRefundAmount,
         merchantReference: 'partial-refund-test',
         type: TypeEnum::MERCHANT_INITIATED_ONLINE,
-        lineItems: [
-            [
-                'uniqueId' => $targetItem->uniqueId,
-                'quantity' => 0, // We are not returning the item, just reducing price
-                'amount' => $unitReduction // Reduction PER UNIT
-            ]
-        ]
+        lineItems: new RefundLineItemCollection(
+            new RefundLineItem(
+                uniqueId: $targetItem->uniqueId,
+                returnedQuantity: 0, // We are not returning the item, just reducing price
+                unitPriceReduction: $unitReduction, // Reduction PER UNIT
+            ),
+        ),
     );
 
     try {
         $refund = $refundService->createRefund((int)$spaceId, $context);
         echo "SUCCESS: Partial Refund Created. ID: " . $refund->id . ", State: " . $refund->state->value . "\n";
+        $lastRefundId = $refund->id;
         list_refunds($refundService, $spaceId, $transactionId);
     } catch (\Exception $e) {
         echo "FAILED: " . $e->getMessage() . "\n";
@@ -211,9 +219,44 @@ if ($remaining > 0) {
     try {
         $refund = $refundService->createRefund((int)$spaceId, $context);
         echo "SUCCESS: Final Refund Created. ID: " . $refund->id . ", State: " . $refund->state->value . "\n";
+        $lastRefundId = $refund->id;
     } catch (\Exception $e) {
         echo "FAILED: " . $e->getMessage() . "\n";
     }
 } else {
     echo "No remaining amount to refund.\n";
+}
+
+// TEST: Fetch a single refund by its ID, as a webhook processor would:
+// webhook payloads carry a refund ID but no transaction ID.
+echo "\n--- TEST 4: Fetch Refund by ID (Webhook Scenario) ---\n";
+if (isset($lastRefundId)) {
+    try {
+        $refund = $refundGateway->findById((int)$spaceId, $lastRefundId);
+        echo "SUCCESS: Fetched Refund $lastRefundId directly.\n";
+        echo " > Transaction ID: {$refund->transactionId} (resolved from the API payload)\n";
+        echo " > Amount: {$refund->amount}, State: {$refund->state->value}\n";
+        foreach ($refund->lineItems ?? [] as $item) {
+            echo " > Refunded item: {$item->name} ({$item->amountIncludingTax})\n";
+        }
+    } catch (\Exception $e) {
+        echo "FAILED: " . $e->getMessage() . "\n";
+    }
+} else {
+    echo "SKIPPED: No refund was created in the previous steps.\n";
+}
+
+// Show what is still refundable: the service resolves this from the latest
+// successful refund's post-refund cart state (or the original cart if none).
+echo "\n--- TEST 5: Remaining Refundable Line Items ---\n";
+try {
+    $refundable = $refundService->getRefundableLineItems((int)$spaceId, $transactionId);
+    if ($refundable->isEmpty()) {
+        echo " > Nothing left to refund.\n";
+    }
+    foreach ($refundable as $item) {
+        echo " > Refundable: {$item->name} ({$item->amountIncludingTax}, qty {$item->quantity})\n";
+    }
+} catch (\Exception $e) {
+    echo "FAILED: " . $e->getMessage() . "\n";
 }

@@ -6,8 +6,9 @@ error_reporting(E_ALL & ~E_DEPRECATED);
 require_once __DIR__ . '/../../examples/Common/bootstrap.php';
 
 use WeArePlanet\PluginCore\Address\Address;
-
+use WeArePlanet\PluginCore\Customer\PersonalDetails;
 use WeArePlanet\PluginCore\LineItem\LineItem;
+use WeArePlanet\PluginCore\LineItem\LineItemCollection;
 use WeArePlanet\PluginCore\LineItem\LineItemConsistencyService;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodSorting as PaymentMethodSortingEnum;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
@@ -15,6 +16,7 @@ use WeArePlanet\PluginCore\Examples\Common\FilePersistence;
 use WeArePlanet\PluginCore\Examples\Common\TransactionIdLoader;
 use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\TransactionGateway;
 use WeArePlanet\PluginCore\Settings\Settings;
+use WeArePlanet\PluginCore\SharedKernel\Url;
 use WeArePlanet\PluginCore\Tax\Tax;
 use WeArePlanet\PluginCore\Transaction\TransactionContext;
 use WeArePlanet\PluginCore\Transaction\TransactionService;
@@ -59,22 +61,26 @@ function create_base_context($spaceId, $txId, $ref): TransactionContext
     $context->language = 'en-US';
     $context->transactionId = $txId;
 
-    // FIX: Add Customer ID
+    // Add Customer ID
     $context->customerId = 'guest-123';
 
-    // FIX: Add Success/Fail URLs
-    $context->successUrl = 'https://example.com/success';
-    $context->failedUrl = 'https://example.com/fail';
+    // Add Success/Fail URLs
+    $context->successUrl = new Url('https://example.com/success');
+    $context->failedUrl = new Url('https://example.com/fail');
 
     $billing = new Address();
-    $billing->givenName = 'John';
-    $billing->familyName = 'Doe';
     $billing->street = 'Bahnhofstrasse 1';
     $billing->city = 'Zurich';
     $billing->postcode = '8000';
     $billing->country = 'CH';
-    $billing->emailAddress = 'test@example.com';
     $context->billingAddress = $billing;
+
+    // Identity data lives on the Customer domain objects, not the Address.
+    $context->personalDetails = new PersonalDetails(
+        emailAddress: 'test@example.com',
+        familyName: 'Doe',
+        givenName: 'John',
+    );
 
     return $context;
 }
@@ -112,7 +118,7 @@ $item1->amountIncludingTax = 300.00; // 150 * 2
 $item1->type = LineItem::TYPE_PRODUCT;
 $item1->addTax(new Tax('VAT', 7.7));
 
-$context->lineItems = [$item1];
+$context->lineItems = new LineItemCollection($item1);
 $context->expectedGrandTotal = 300.00;
 
 try {
@@ -141,7 +147,7 @@ $item2->amountIncludingTax = 50.00;
 $item2->type = LineItem::TYPE_PRODUCT;
 $item2->addTax(new Tax('VAT', 7.7));
 
-$context->lineItems = [$item1, $item2]; // Watch(2) + Strap(1)
+$context->lineItems = new LineItemCollection($item1, $item2); // Watch(2) + Strap(1)
 $context->expectedGrandTotal = 350.00;
 
 try {
@@ -169,7 +175,7 @@ $item3->amountIncludingTax = -35.00; // 10% of 350
 $item3->type = LineItem::TYPE_DISCOUNT;
 $item3->addTax(new Tax('VAT', 7.7));
 
-$context->lineItems = [$item1, $item2, $item3]; // Watch(2) + Strap(1) + Discount
+$context->lineItems = new LineItemCollection($item1, $item2, $item3); // Watch(2) + Strap(1) + Discount
 $context->expectedGrandTotal = 315.00;
 
 try {

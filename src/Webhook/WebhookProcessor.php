@@ -6,10 +6,13 @@ namespace WeArePlanet\PluginCore\Webhook;
 
 use WeArePlanet\PluginCore\Http\Request;
 use WeArePlanet\PluginCore\Localization\LocalizedString;
+use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
+use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Webhook\Enum\WebhookListener;
 use WeArePlanet\PluginCore\Webhook\Exception\CommandException;
 use WeArePlanet\PluginCore\Webhook\Exception\SkippedStepException;
+use WeArePlanet\PluginCore\Webhook\Exception\TransientWebhookException;
 use WeArePlanet\PluginCore\Webhook\Listener\WebhookListenerRegistry;
 
 /**
@@ -19,8 +22,10 @@ use WeArePlanet\PluginCore\Webhook\Listener\WebhookListenerRegistry;
  * transition path between the last processed state and the current remote state.
  * It ensures idempotency and correct execution of side effects (listeners).
  */
+#[LogContext(domain: 'webhook')]
 class WebhookProcessor
 {
+    use DomainLoggerTrait;
     /**
      * @param WebhookListenerRegistry $listenerRegistry Maps entity/state pairs to specific handlers.
      * @param StateValidator $stateValidator Validates if a transition is allowed vs. stale or duplicate.
@@ -33,8 +38,9 @@ class WebhookProcessor
         private readonly StateValidator $stateValidator,
         private readonly WebhookLifecycleHandler $lifecycleHandler,
         private readonly StateFetcherInterface $stateFetcher,
-        private readonly LoggerInterface $logger,
+        LoggerInterface $logger,
     ) {
+        $this->initializeLogger($logger);
     }
 
     /**
@@ -172,6 +178,22 @@ class WebhookProcessor
             // Validation Failures or Command issues caught as CommandException.
             // These represent client-side errors (bad payload). We log them as warnings as they don't require system-level intervention.
             $this->logger->warning("Webhook validation failed.", ['exception' => $e]);
+        } catch (TransientWebhookException $e) {
+            // Transient Failure Hook: same recovery as the generic handler, but
+            // the consumer told us this is a temporary, self-healing state
+            // (e.g. lock contention), so we log at info severity instead of error.
+            if ($context && $webhookListener) {
+                $this->lifecycleHandler->onFailure($webhookListener, $context, $e);
+            }
+            $this->logger->info('Webhook processing delayed: transient condition (will be retried).', ['exception' => $e]);
+
+            // Still re-throw as CommandException so the Controller returns a
+            // 5xx and the Portal retries the delivery.
+            throw new CommandException(
+                "Webhook command execution failed for entity {$entityId} with listener {$technicalName} under space {$spaceId}.",
+                new LocalizedString('Webhook command execution failed.'),
+                $e,
+            );
         } catch (\Throwable $e) {
             // Failure Recovery
             // We invoke the onFailure hook to rollback active transactions and release locks.

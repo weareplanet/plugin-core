@@ -7,6 +7,8 @@ namespace WeArePlanet\PluginCore\Refund;
 use WeArePlanet\PluginCore\LineItem\LineItem;
 use WeArePlanet\PluginCore\LineItem\LineItemCollection;
 use WeArePlanet\PluginCore\Localization\LocalizedString;
+use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
+use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Refund\Exception\InvalidRefundException;
 use WeArePlanet\PluginCore\Transaction\Transaction;
@@ -19,8 +21,10 @@ use WeArePlanet\PluginCore\Transaction\TransactionService;
  * the original authorized amount, they must be consistent with the line item
  * reductions specified, and they cannot be applied to non-refundable items like discounts.
  */
+#[LogContext(domain: 'refund')]
 class RefundService
 {
+    use DomainLoggerTrait;
     /**
      * @param RefundGatewayInterface $gateway Interface to the persistence or API layer for refunds.
      * @param TransactionService $transactionService Used to fetch the parent transaction for validation.
@@ -29,8 +33,9 @@ class RefundService
     public function __construct(
         private readonly RefundGatewayInterface $gateway,
         private readonly TransactionService $transactionService,
-        private readonly LoggerInterface $logger,
+        LoggerInterface $logger,
     ) {
+        $this->initializeLogger($logger);
     }
 
     /**
@@ -38,6 +43,14 @@ class RefundService
      *
      * This method validates the refund against the original transaction's state
      * before committing the request to the gateway.
+     *
+     * When building the RefundContext for a partial, line-item-level refund,
+     * source the line items from {@see getRefundableLineItems()} — not the
+     * original Transaction cart — and read each item's `unitPriceIncludingTax`
+     * for the per-unit price used in the reduction. Never derive it by
+     * dividing `amountIncludingTax` by `quantity`: floating-point division
+     * introduces rounding errors that cause the gateway API to reject the
+     * refund.
      *
      * @param int $spaceId The identity space.
      * @param RefundContext $context The refund details (amount, line items, external ref).
@@ -63,27 +76,76 @@ class RefundService
     }
 
     /**
-     * Retrieves a list of line items from a transaction that are eligible for refunding.
+     * Returns the line items that are still refundable for a transaction.
      *
-     * Discounts and items with zero/negative amounts are excluded because they
-     * represent price reductions rather than physical or service-based items that
-     * can be "returned" or "refunded" individually.
+     * The gateway reports the post-refund cart state on each refund
+     * ($reducedLineItems), so the most recent SUCCESSFUL refund already
+     * describes what remains — no manual math needed. When no successful
+     * refund exists yet, the original transaction line items are returned.
      *
-     * @param Transaction $transaction The parent transaction.
-     * @return LineItemCollection List of refundable items.
+     * When constructing a RefundContext for a partial line-item reduction
+     * from the items returned here, read `$item->unitPriceIncludingTax` for
+     * the per-unit price. Do not derive it via
+     * `$item->amountIncludingTax / $item->quantity` — floating-point
+     * division introduces rounding errors that cause the gateway API to
+     * reject the refund.
+     *
+     * @param int $spaceId The identity space.
+     * @param int $transactionId The parent transaction ID.
+     * @return LineItemCollection The line items still available for refunding.
      */
-    public function getRefundableLineItems(Transaction $transaction): LineItemCollection
+    public function getRefundableLineItems(int $spaceId, int $transactionId): LineItemCollection
+    {
+        $latestSuccessful = null;
+        foreach ($this->gateway->findByTransaction($spaceId, $transactionId) as $refund) {
+            if ($refund->state !== State::SUCCESSFUL) {
+                continue;
+            }
+            if ($latestSuccessful === null || $this->isMoreRecent($refund, $latestSuccessful)) {
+                $latestSuccessful = $refund;
+            }
+        }
+
+        if ($latestSuccessful !== null) {
+            // If the gateway did not report the reduced state, assume nothing
+            // is left rather than overstating what is refundable.
+            return $this->filterRefundableItems($latestSuccessful->reducedLineItems ?? new LineItemCollection());
+        }
+
+        $transaction = $this->transactionService->getTransaction($spaceId, $transactionId);
+        return $this->filterRefundableItems(new LineItemCollection(...$transaction->lineItems));
+    }
+
+    /**
+     * Filters a collection down to the items that can actually be refunded.
+     * Discounts and items with zero or negative amounts are excluded because
+     * they represent price reductions rather than refundable items.
+     */
+    private function filterRefundableItems(LineItemCollection $collection): LineItemCollection
     {
         $refundableItems = [];
-
-        foreach ($transaction->lineItems as $item) {
-            // Business Rule: Only positive-value, non-discount items are candidates for manual refund selection.
+        foreach ($collection as $item) {
             if ($item->type !== LineItem::TYPE_DISCOUNT && $item->amountIncludingTax > 0.0) {
                 $refundableItems[] = $item;
             }
         }
 
         return new LineItemCollection(...$refundableItems);
+    }
+
+    /**
+     * Whether $candidate is a more recent refund than $current, preferring
+     * the creation timestamp and falling back to the sequential ID.
+     */
+    private function isMoreRecent(Refund $candidate, Refund $current): bool
+    {
+        $candidateTime = $candidate->createdOn?->getTimestamp();
+        $currentTime = $current->createdOn?->getTimestamp();
+        if ($candidateTime !== null && $currentTime !== null && $candidateTime !== $currentTime) {
+            return $candidateTime > $currentTime;
+        }
+
+        return $candidate->id > $current->id;
     }
 
     /**
@@ -146,13 +208,12 @@ class RefundService
 
         // Line Item Consistency Validation
         // If specific line items are provided, their individual reductions must sum up to the total refund amount.
-        if (!empty($context->lineItems)) {
+        if (!$context->lineItems->isEmpty()) {
             $calculatedTotalReduction = 0.0;
 
             foreach ($context->lineItems as $refundItem) {
-                $uId = $refundItem['uniqueId'];
-                $quantity = $refundItem['quantity'];
-                $unitPriceReduction = $refundItem['amount'];
+                $uId = $refundItem->uniqueId;
+                $quantity = $refundItem->returnedQuantity;
 
                 $originalItem = $this->findLineItem($originalTransaction->lineItems, $uId);
 
@@ -178,13 +239,6 @@ class RefundService
                     );
                 }
 
-                // Reduction Path Calculation
-                // We determine the unit price to validate the per-item reduction.
-                $originalUnitPrice = 0.0;
-                if ($originalItem->quantity > 0) {
-                    $originalUnitPrice = $originalItem->amountIncludingTax / $originalItem->quantity;
-                }
-
                 // We prevent over-refunding a single line item.
                 if ($quantity > $originalItem->quantity) {
                     throw new InvalidRefundException(
@@ -193,11 +247,11 @@ class RefundService
                     );
                 }
 
-                $remainingQuantity = $originalItem->quantity - $quantity;
-
-                // Combined Reduction Formula:
-                // We factor in both fully returned items (at full price) and partial reductions on remaining items.
-                $itemTotalReduction = ($quantity * $originalUnitPrice) + ($remainingQuantity * $unitPriceReduction);
+                // Reduction Path Calculation
+                // RefundCalculator reads the unit price directly from the line item —
+                // never derive it via division (amountIncludingTax / quantity), which
+                // introduces floating-point rounding errors.
+                $itemTotalReduction = RefundCalculator::calculateReduction($originalItem, $refundItem);
 
                 if ($itemTotalReduction > $originalItem->amountIncludingTax + 0.01) {
                     $itemAmount = sprintf("%.2f", $itemTotalReduction);

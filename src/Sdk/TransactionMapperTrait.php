@@ -5,15 +5,15 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\Sdk;
 
 use WeArePlanet\PluginCore\Address\Address;
-use WeArePlanet\PluginCore\LineItem\LineItem;
+use WeArePlanet\PluginCore\Customer\CompanyDetails;
+use WeArePlanet\PluginCore\Customer\Gender;
+use WeArePlanet\PluginCore\Customer\PersonalDetails;
 use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Token\State as TokenState;
 use WeArePlanet\PluginCore\Token\Token;
 use WeArePlanet\PluginCore\Transaction\State as StateEnum;
 use WeArePlanet\PluginCore\Transaction\Transaction;
 use WeArePlanet\Sdk\Model\Address as SdkAddress;
-use WeArePlanet\Sdk\Model\LineItem as SdkLineItem;
-use WeArePlanet\Sdk\Model\LineItemType as SdkLineItemType;
 use WeArePlanet\Sdk\Model\Token as SdkToken;
 use WeArePlanet\Sdk\Model\Transaction as SdkTransaction;
 
@@ -29,6 +29,7 @@ trait TransactionMapperTrait
 {
     use DateTimeMapperTrait;
     use FailureReasonMapperTrait;
+    use LineItemMapperTrait;
     use TokenMapperTrait;
 
     /**
@@ -87,6 +88,8 @@ trait TransactionMapperTrait
 
         if ($sdkTransaction->getBillingAddress()) {
             $domain->billingAddress = $this->mapToAddress($sdkTransaction->getBillingAddress());
+            $domain->personalDetails = $this->mapToPersonalDetails($sdkTransaction->getBillingAddress());
+            $domain->companyDetails = $this->mapToCompanyDetails($sdkTransaction->getBillingAddress());
         }
 
         if ($sdkTransaction->getShippingAddress()) {
@@ -97,7 +100,9 @@ trait TransactionMapperTrait
     }
 
     /**
-     * Maps an SDK Address to a domain Address.
+     * Maps an SDK Address to a domain Address (geographic data only; identity
+     * data is mapped separately via {@see mapToPersonalDetails} and
+     * {@see mapToCompanyDetails}).
      *
      * @param SdkAddress $sdkAddress
      * @return Address
@@ -107,41 +112,48 @@ trait TransactionMapperTrait
         $address = new Address();
         $address->city = $sdkAddress->getCity();
         $address->country = $sdkAddress->getCountry();
-        $address->familyName = $sdkAddress->getFamilyName();
-        $address->givenName = $sdkAddress->getGivenName();
-        $address->organizationName = $sdkAddress->getOrganizationName();
+        $address->dependentLocality = $sdkAddress->getDependentLocality();
         $address->phoneNumber = $sdkAddress->getPhoneNumber();
+        $address->postalState = $sdkAddress->getPostalState();
         $address->postcode = $sdkAddress->getPostcode();
+        $address->sortingCode = $sdkAddress->getSortingCode();
         $address->street = $sdkAddress->getStreet();
-        $address->emailAddress = $sdkAddress->getEmailAddress();
-        $address->salutation = $sdkAddress->getSalutation();
-        $address->dateOfBirth = $this->toDateTimeImmutable($sdkAddress->getDateOfBirth());
-        $address->salesTaxNumber = $sdkAddress->getSalesTaxNumber();
         return $address;
     }
 
     /**
-     * Maps an SDK LineItem to a domain LineItem.
+     * Maps the identity fields of an SDK Address to the customer's PersonalDetails.
      *
-     * @param SdkLineItem $sdkItem
-     * @return LineItem
+     * @param SdkAddress $sdkAddress
+     * @return PersonalDetails
      */
-    protected function mapToLineItem(SdkLineItem $sdkItem): LineItem
+    protected function mapToPersonalDetails(SdkAddress $sdkAddress): PersonalDetails
     {
-        $item = new LineItem();
-        $item->uniqueId = $sdkItem->getUniqueId();
-        $item->sku = $sdkItem->getSku();
-        $item->name = $sdkItem->getName();
-        $item->quantity = $sdkItem->getQuantity();
-        $item->amountIncludingTax = $sdkItem->getAmountIncludingTax();
-        $item->type = match ($sdkItem->getType()) {
-            SdkLineItemType::DISCOUNT => LineItem::TYPE_DISCOUNT,
-            SdkLineItemType::SHIPPING => LineItem::TYPE_SHIPPING,
-            SdkLineItemType::FEE => LineItem::TYPE_FEE,
-            default => LineItem::TYPE_PRODUCT,
-        };
+        return new PersonalDetails(
+            dateOfBirth: $this->toDateTimeImmutable($sdkAddress->getDateOfBirth()),
+            emailAddress: $sdkAddress->getEmailAddress(),
+            familyName: $sdkAddress->getFamilyName(),
+            gender: Gender::tryFrom((string) $sdkAddress->getGender()),
+            givenName: $sdkAddress->getGivenName(),
+            mobilePhoneNumber: $sdkAddress->getMobilePhoneNumber(),
+            salutation: $sdkAddress->getSalutation(),
+            socialSecurityNumber: $sdkAddress->getSocialSecurityNumber(),
+        );
+    }
 
-        return $item;
+    /**
+     * Maps the corporate identity fields of an SDK Address to the customer's CompanyDetails.
+     *
+     * @param SdkAddress $sdkAddress
+     * @return CompanyDetails
+     */
+    protected function mapToCompanyDetails(SdkAddress $sdkAddress): CompanyDetails
+    {
+        return new CompanyDetails(
+            commercialRegisterNumber: $sdkAddress->getCommercialRegisterNumber(),
+            organizationName: $sdkAddress->getOrganizationName(),
+            salesTaxNumber: $sdkAddress->getSalesTaxNumber(),
+        );
     }
 
 }

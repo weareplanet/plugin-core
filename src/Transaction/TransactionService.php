@@ -6,6 +6,8 @@ namespace WeArePlanet\PluginCore\Transaction;
 
 use WeArePlanet\PluginCore\LineItem\LineItemConsistencyService;
 use WeArePlanet\PluginCore\Localization\LocalizedString;
+use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
+use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethod;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodCollection;
@@ -23,8 +25,10 @@ use WeArePlanet\PluginCore\Transaction\TransactionSearchCriteria;
  * It ensures that line items remain consistent with the expected totals and handles
  * the idempotent "upsert" logic required for seamless session management in shop integrations.
  */
+#[LogContext(domain: 'transaction', subdomain: 'checkout')]
 class TransactionService
 {
+    use DomainLoggerTrait;
     /**
      * @param TransactionGatewayInterface $gateway Interface to the SDK or persistence layer.
      * @param LineItemConsistencyService $consistencyService Ensures totals and taxes match line item sums.
@@ -33,8 +37,9 @@ class TransactionService
     public function __construct(
         private readonly TransactionGatewayInterface $gateway,
         private readonly LineItemConsistencyService $consistencyService,
-        private readonly LoggerInterface $logger,
+        LoggerInterface $logger,
     ) {
+        $this->initializeLogger($logger);
     }
 
     /**
@@ -59,7 +64,7 @@ class TransactionService
             // If the overall total is negative (common with aggressive discounts), we normalize it to zero
             // and adjust line items to satisfy the SDK's non-negative requirement.
             if (isset($context->expectedGrandTotal) && $context->expectedGrandTotal < -0.00000001) {
-                $context->lineItems = $this->consistencyService->sanitizeNegativeLineItems($context->lineItems)->all();
+                $context->lineItems = $this->consistencyService->sanitizeNegativeLineItems($context->lineItems->all());
                 $context->expectedGrandTotal = 0.0;
             }
 
@@ -67,12 +72,12 @@ class TransactionService
             // Many payment gateways require that the sum of line items exactly matches the grand total.
             // We use the consistency service to handle potential rounding discrepancies.
             $context->lineItems = $this->consistencyService->ensureConsistency(
-                $context->lineItems,
+                $context->lineItems->all(),
                 $context->expectedGrandTotal,
                 $context->currencyCode,
                 $context->spaceId,
                 $context->transactionId,
-            )->all();
+            );
 
             $this->validateContext($context);
 
@@ -328,7 +333,7 @@ class TransactionService
                 }
 
                 if (isset($context->expectedGrandTotal) && $context->expectedGrandTotal < -0.00000001) {
-                    $context->lineItems = $this->consistencyService->sanitizeNegativeLineItems($context->lineItems)->all();
+                    $context->lineItems = $this->consistencyService->sanitizeNegativeLineItems($context->lineItems->all());
                     $context->expectedGrandTotal = 0.0;
                 }
 

@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Refund;
 
-use WeArePlanet\PluginCore\Render\JsonStringableTrait;
+use WeArePlanet\PluginCore\Refund\LineItem\RefundLineItemCollection;
+use WeArePlanet\PluginCore\SharedKernel\JsonStringableTrait;
 
 /**
  * The standardized input required to create a refund.
@@ -18,8 +19,9 @@ class RefundContext
      * @param float $amount
      * @param string $merchantReference
      * @param Type $type
-     * @param array $lineItems Optional list of line item reductions: [['uniqueId' => string, 'quantity' => float, 'amount' => float]].
-     *                         NOTE: 'amount' is the Unit Price Reduction per remaining item, NOT the total reduction amount.
+     * @param RefundLineItemCollection $lineItems Optional list of line item reductions.
+     *                         NOTE: {@see RefundLineItem::$unitPriceReduction} is the Unit Price Reduction per
+     *                         remaining item, NOT the total reduction amount.
      *                         See docs/Refund/README.md for calculation formula.
      */
     public function __construct(
@@ -27,8 +29,7 @@ class RefundContext
         public readonly float $amount,
         public readonly string $merchantReference,
         public readonly Type $type,
-        /** @var list<array{uniqueId: ?string, quantity: float, amount: float}> List of line item reductions. */
-        public readonly array $lineItems = [],
+        public readonly RefundLineItemCollection $lineItems = new RefundLineItemCollection(),
         public ?string $externalId = null,
     ) {
     }

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\Transaction;
 
 use WeArePlanet\PluginCore\Localization\LocalizedString;
+use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
+use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Token\Exception\MissingTokenException;
 use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
@@ -15,13 +17,16 @@ use WeArePlanet\PluginCore\Transaction\TransactionService;
 /**
  * Service for handling recurring transactions.
  */
-readonly class RecurringTransactionService
+#[LogContext(domain: 'transaction', subdomain: 'recurring')]
+class RecurringTransactionService
 {
+    use DomainLoggerTrait;
     public function __construct(
-        private TransactionService $transactionService,
-        private RecurringTransactionGatewayInterface $recurringGateway,
-        private LoggerInterface $logger,
+        private readonly TransactionService $transactionService,
+        private readonly RecurringTransactionGatewayInterface $recurringGateway,
+        LoggerInterface $logger,
     ) {
+        $this->initializeLogger($logger);
     }
 
     /**

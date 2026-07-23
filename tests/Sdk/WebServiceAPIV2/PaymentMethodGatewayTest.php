@@ -7,6 +7,7 @@ namespace WeArePlanet\PluginCore\Tests\Sdk\WebServiceAPIV2;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
+use WeArePlanet\PluginCore\PaymentMethod\Exception\PaymentMethodException;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethod;
 use WeArePlanet\PluginCore\PaymentMethod\State;
 use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
@@ -71,7 +72,7 @@ class PaymentMethodGatewayTest extends TestCase
 
     public function testFetchByIdThrowsExceptionIfNotFound(): void
     {
-        $this->expectException(TransactionException::class);
+        $this->expectException(PaymentMethodException::class);
         $this->expectExceptionMessage('Payment method 10 not found: Not found');
 
         $this->service->expects($this->once())

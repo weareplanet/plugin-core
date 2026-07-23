@@ -287,7 +287,7 @@ class PaymentMethodServiceTest extends TestCase
         $logger->expects($this->once())
             ->method('info')
             ->with(
-                'Payment method sync completed.',
+                '[Sync] Payment method sync completed.',
                 $this->callback(function (array $context): bool {
                     return isset($context['skipped']) && $context['skipped'] === 1;
                 }),
