@@ -11,7 +11,7 @@ use WeArePlanet\PluginCore\SharedKernel\JsonStringableTrait;
  *
  * NOTE: `unitPriceReduction` is the price reduction applied to each of the
  * remaining (non-returned) units, NOT the total reduction for the item.
- * See docs/Refund/README.md for the full calculation formula.
+ * See docs/3-Post-Payment/Refund.md for the full calculation formula.
  */
 final class RefundLineItem
 {

@@ -73,16 +73,18 @@ class TransactionCompletionGateway implements TransactionCompletionGatewayInterf
                 $sdkCompletionRequest = new SdkTransactionCompletionRequest();
                 $sdkCompletionRequest->setTransactionId($transactionId);
                 $sdkCompletionRequest->setLastCompletion($request->isFinal);
-                if ($request->externalId !== null) {
-                    $sdkCompletionRequest->setExternalId($request->externalId);
-                }
+                // Guaranteed non-null for a partial capture: CaptureRequest rejects
+                // a partial request without one, since the API requires it.
+                $sdkCompletionRequest->setExternalId((string)$request->externalId);
                 if ($request->merchantReference !== null) {
                     $sdkCompletionRequest->setInvoiceMerchantReference($request->merchantReference);
                 }
                 $sdkCompletionRequest->setLineItems(array_map(
                     static function (LineItem $item): SdkCompletionLineItemCreate {
-                        $item->sanitize();
-
+                        // Only uniqueId, quantity and amount are sent for a capture, so a
+                        // capture line item needs nothing else set. Deliberately no
+                        // sanitize() call here: it touches name/sku, which are neither
+                        // required nor transmitted, and would fail on a minimal item.
                         $sdkItem = new SdkCompletionLineItemCreate();
                         $sdkItem->setUniqueId($item->uniqueId);
                         $sdkItem->setQuantity($item->quantity);
@@ -102,10 +104,12 @@ class TransactionCompletionGateway implements TransactionCompletionGatewayInterf
                 'transactionId' => $transactionId,
                 'spaceId' => $spaceId,
             ]);
-            throw new CompletionException(
-                "Failed to capture transaction {$transactionId}: " . $e->getMessage(),
-                new LocalizedString('An error occurred while capturing the transaction.'),
+            throw SdkProvider::wrapException(
                 $e,
+                CompletionException::class,
+                'completeOnline',
+                ['spaceId' => $spaceId, 'transactionId' => $transactionId],
+                'An error occurred while capturing the transaction.',
             );
         }
     }
@@ -150,10 +154,12 @@ class TransactionCompletionGateway implements TransactionCompletionGatewayInterf
                 'completionId' => $completionId,
                 'spaceId' => $spaceId,
             ]);
-            throw new CompletionException(
-                "Failed to find completion {$completionId}: " . $e->getMessage(),
-                new LocalizedString('An error occurred while retrieving the completion.'),
+            throw SdkProvider::wrapException(
                 $e,
+                CompletionException::class,
+                'read',
+                ['spaceId' => $spaceId, 'completionId' => $completionId],
+                'An error occurred while retrieving the completion.',
             );
         }
     }
@@ -196,10 +202,12 @@ class TransactionCompletionGateway implements TransactionCompletionGatewayInterf
                 'completionId' => $completionId,
                 'spaceId' => $spaceId,
             ]);
-            throw new CompletionException(
-                "Failed to read completion {$completionId}: " . $e->getMessage(),
-                new LocalizedString('An error occurred while retrieving the completion.'),
+            throw SdkProvider::wrapException(
                 $e,
+                CompletionException::class,
+                'read',
+                ['spaceId' => $spaceId, 'completionId' => $completionId],
+                'An error occurred while retrieving the completion.',
             );
         }
     }
@@ -277,10 +285,12 @@ class TransactionCompletionGateway implements TransactionCompletionGatewayInterf
                 'transactionId' => $transactionId,
                 'spaceId' => $spaceId,
             ]);
-            throw new CompletionException(
-                "Failed to void transaction {$transactionId}: " . $e->getMessage(),
-                new LocalizedString('An error occurred while voiding the transaction.'),
+            throw SdkProvider::wrapException(
                 $e,
+                CompletionException::class,
+                'voidOnline',
+                ['spaceId' => $spaceId, 'transactionId' => $transactionId],
+                'An error occurred while voiding the transaction.',
             );
         }
     }

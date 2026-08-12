@@ -11,7 +11,7 @@ use WeArePlanet\PluginCore\SharedKernel\JsonStringableTrait;
 class Request
 {
     use JsonStringableTrait;
-    /** @var array<string, string> Lowercase header keys */
+    /** @var array<string, string> Lowercase header keys, single-valued */
     private array $headers = [];
 
     private string $rawBody = '';
@@ -21,7 +21,7 @@ class Request
      * The constructor is private to force the use of static factory methods
      * for different environments (Magento, Symfony, WordPress, etc.).
      *
-     * @param array<string, string> $headers
+     * @param array<string, string|string[]> $headers
      * @param array<string, mixed> $body
      * @param string $rawBody
      */
@@ -30,8 +30,9 @@ class Request
         public readonly array $body,
         string $rawBody,
     ) {
-        // Store headers with lowercase keys for case-insensitive lookups
-        $this->headers = array_change_key_case($headers, CASE_LOWER);
+        // Lowercase keys for case-insensitive lookups, and flatten any
+        // list-valued header down to a single string.
+        $this->headers = self::normalizeHeaders($headers);
         $this->rawBody = $rawBody;
     }
 
@@ -40,7 +41,7 @@ class Request
      * Use this method when you need to manually construct a request object
      * without relying on specific framework implementations.
      *
-     * @param array<string, string> $headers The HTTP headers.
+     * @param array<string, string|string[]> $headers The HTTP headers.
      * @param array<string, mixed> $body The parsed request body.
      * @param string $rawBody The raw, unparsed request body.
      * @return self The new Request instance.
@@ -141,5 +142,37 @@ class Request
     public function getRawBody(): string
     {
         return $this->rawBody;
+    }
+
+    /**
+     * Flattens header values to a single string each.
+     *
+     * Some frameworks hand over one value per header, others a list — Symfony's
+     * HttpFoundation returns `array<string, string[]>` from `headers->all()`, for
+     * instance. Normalising once here keeps {@see getHeader()} honest about
+     * returning a string, instead of fataling on whichever platform happens to
+     * supply lists.
+     *
+     * Where a header carries several values, the first wins: the headers this
+     * class is consulted for (a webhook signature, say) are single-valued by
+     * definition, and a repeated one is a malformed request rather than a list to
+     * be joined.
+     *
+     * @param array<string, string|string[]> $headers The raw headers.
+     * @return array<string, string> Lowercase keys, single string values.
+     */
+    private static function normalizeHeaders(array $headers): array
+    {
+        $normalized = [];
+
+        foreach (array_change_key_case($headers, CASE_LOWER) as $name => $value) {
+            if (is_array($value)) {
+                $value = $value === [] ? '' : reset($value);
+            }
+
+            $normalized[$name] = (string)$value;
+        }
+
+        return $normalized;
     }
 }

@@ -25,13 +25,13 @@ class LineItem
     /**
      * Custom attributes attached to this item. Each {@see LineItemAttribute}
      * carries both the human-readable label and the attribute value so the
-     * portal can render `label: value` pairs.
+     * WeArePlanet Portal can render `label: value` pairs.
      */
     public ?LineItemAttributeCollection $attributes = null;
 
     /**
      * The discount already netted into $amountIncludingTax, reported
-     * separately so the portal can display and reconcile it.
+     * separately so the WeArePlanet Portal can display and reconcile it.
      *
      * Compute this as (the item's amount before any discount) minus
      * $amountIncludingTax — e.g. for a Magento quote item,

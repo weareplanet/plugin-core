@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV1;
 
-use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
 use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
@@ -74,10 +73,12 @@ class RecurringTransactionGateway implements RecurringTransactionGatewayInterfac
                 'spaceId' => $spaceId,
                 'exception' => $e,
             ]);
-            throw new TransactionException(
-                "Failed to process recurring payment for transaction $transactionId: " . $e->getMessage(),
-                new LocalizedString('The recurring payment could not be processed.'),
+            throw SdkProvider::wrapException(
                 $e,
+                TransactionException::class,
+                'processWithoutUserInteraction',
+                ['spaceId' => $spaceId, 'transactionId' => $transactionId],
+                'The recurring payment could not be processed.',
             );
         }
     }

@@ -11,11 +11,27 @@ enum State: string
     use ValidatesStateTransitions;
 
     /**
+     * Whether a completion — a capture or a void — can be attempted on a transaction
+     * in this state.
+     *
+     * Only an AUTHORIZED transaction can be completed; the API rejects a completion
+     * against any other state. Accepting a capture moves the transaction out of
+     * AUTHORIZED, so this also reports false for one that has already been captured.
+     */
+    public function allowsCompletion(): bool
+    {
+        return match ($this) {
+            self::AUTHORIZED => true,
+            default => false,
+        };
+    }
+
+    /**
      * Whether the shop may still create or cancel a local invoice for this transaction.
      *
-     * While AUTHORIZED, the portal has not generated its own invoice yet, so
+     * While AUTHORIZED, the WeArePlanet Portal has not generated its own invoice yet, so
      * the shop's local bookkeeping can still freely create or cancel one.
-     * Once COMPLETED, the portal's invoice takes over and local manipulation
+     * Once COMPLETED, the WeArePlanet Portal's invoice takes over and local manipulation
      * is no longer safe.
      */
     public function allowsInvoiceManipulation(): bool
@@ -80,7 +96,7 @@ enum State: string
     }
 
     /**
-     * Whether the portal has generated an invoice document that can be downloaded.
+     * Whether the WeArePlanet Portal has generated an invoice document that can be downloaded.
      *
      * The invoice is generated once the transaction COMPLETES, and it stays
      * downloadable in every state reachable afterward — including DECLINE,
@@ -95,7 +111,7 @@ enum State: string
     }
 
     /**
-     * Whether the portal has generated a packing slip that can be downloaded.
+     * Whether the WeArePlanet Portal has generated a packing slip that can be downloaded.
      *
      * Unlike the invoice (generated at COMPLETED), the packing slip only
      * exists once the order has actually been fulfilled (shipped).
@@ -113,7 +129,7 @@ enum State: string
      *
      * True from AUTHORIZED onward (AUTHORIZED, COMPLETED, FULFILL): the
      * customer has been charged, or the charge is guaranteed, regardless of
-     * whether the portal has invoiced or fulfilled the order yet.
+     * whether the WeArePlanet Portal has invoiced or fulfilled the order yet.
      */
     public function isPaidLike(): bool
     {

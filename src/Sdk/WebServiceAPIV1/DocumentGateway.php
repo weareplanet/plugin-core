@@ -111,10 +111,12 @@ class DocumentGateway implements DocumentGatewayInterface
             throw $e;
         } catch (\Throwable $e) {
             $this->logger->error("DocumentGateway: Failed to get invoice.", ['exception' => $e]);
-            throw new DocumentException(
-                "Failed to get invoice document for transaction $transactionId: " . $e->getMessage(),
-                new LocalizedString('The invoice document could not be retrieved.'),
+            throw SdkProvider::wrapException(
                 $e,
+                DocumentException::class,
+                'getInvoiceDocument',
+                ['spaceId' => $spaceId, 'transactionId' => $transactionId],
+                'The invoice document could not be retrieved.',
             );
         }
     }
@@ -134,10 +136,12 @@ class DocumentGateway implements DocumentGatewayInterface
             return $this->mapSdkDocument($sdkDocument);
         } catch (\Throwable $e) {
             $this->logger->error("DocumentGateway: Failed to get packing slip.", ['exception' => $e]);
-            throw new DocumentException(
-                "Failed to get packing slip for transaction $transactionId: " . $e->getMessage(),
-                new LocalizedString('The packing slip could not be retrieved.'),
+            throw SdkProvider::wrapException(
                 $e,
+                DocumentException::class,
+                'getPackingSlip',
+                ['spaceId' => $spaceId, 'transactionId' => $transactionId],
+                'The packing slip could not be retrieved.',
             );
         }
     }
@@ -157,10 +161,12 @@ class DocumentGateway implements DocumentGatewayInterface
             return $this->mapSdkDocument($sdkDocument);
         } catch (\Throwable $e) {
             $this->logger->error("DocumentGateway: Failed to get refund credit note.", ['exception' => $e]);
-            throw new DocumentException(
-                "Failed to get credit note for refund $refundId: " . $e->getMessage(),
-                new LocalizedString('The credit note could not be retrieved.'),
+            throw SdkProvider::wrapException(
                 $e,
+                DocumentException::class,
+                'getRefundDocument',
+                ['spaceId' => $spaceId, 'refundId' => $refundId],
+                'The credit note could not be retrieved.',
             );
         }
     }

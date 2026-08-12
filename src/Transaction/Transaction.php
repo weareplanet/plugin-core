@@ -60,6 +60,13 @@ class Transaction
     public ?string $customerId = null;
 
     /**
+     * @var TransactionEnvironment|null The immutable snapshot of the environment this
+     * transaction was processed in (space view and language), as it was at processing
+     * time — not the shop's current settings.
+     */
+    public ?TransactionEnvironment $environment = null;
+
+    /**
      * @var \DateTimeImmutable|null The date/time when the transaction failed.
      */
     public ?\DateTimeImmutable $failedOn = null;
@@ -83,6 +90,14 @@ class Transaction
      * @var string|null The merchant reference.
      */
     public ?string $merchantReference = null;
+
+    /**
+     * @var TransactionPaymentMethod|null The immutable snapshot of the payment method and
+     * connector this transaction was processed with, as they were at processing time — not
+     * the merchant's current payment method configuration. Null when the API reported no
+     * payment connector configuration, e.g. before a payment method has been selected.
+     */
+    public ?TransactionPaymentMethod $paymentMethod = null;
 
     /**
      * @var PersonalDetails|null The customer's personal identity data.

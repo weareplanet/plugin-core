@@ -22,6 +22,8 @@ use WeArePlanet\PluginCore\Examples\Common\TransactionIdLoader;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Settings\Settings;
 
+// 📖 Concept documentation: See docs/examples/Common/README.md
+
 // Validate that all required environment variables are present.
 $required = ['PLUGINCORE_DEMO_SPACE_ID', 'PLUGINCORE_DEMO_USER_ID', 'PLUGINCORE_DEMO_API_SECRET'];
 foreach ($required as $var) {

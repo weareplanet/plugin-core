@@ -9,6 +9,7 @@ use PHPUnit\Framework\TestCase;
 use WeArePlanet\PluginCore\Address\Address;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Token\Exception\MissingTokenException;
+use WeArePlanet\PluginCore\Token\State as TokenState;
 use WeArePlanet\PluginCore\Token\Token;
 use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
 use WeArePlanet\PluginCore\Transaction\RecurringTransactionGatewayInterface;
@@ -53,8 +54,7 @@ class RecurringTransactionServiceTest extends TestCase
         $originalTransaction->customerId = 'CUST-001';
         $originalTransaction->currency = 'USD';
 
-        $token = new Token();
-        $token->id = 555;
+        $token = new Token(id: 555, state: TokenState::ACTIVE);
         $originalTransaction->token = $token;
 
         $address = new Address();
@@ -106,8 +106,7 @@ class RecurringTransactionServiceTest extends TestCase
         $originalTransaction->id = $transactionId;
         $originalTransaction->spaceId = $spaceId;
 
-        $token = new Token();
-        $token->id = 555;
+        $token = new Token(id: 555, state: TokenState::ACTIVE);
         $originalTransaction->token = $token;
         $originalTransaction->billingAddress = null;
 

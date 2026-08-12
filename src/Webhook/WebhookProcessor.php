@@ -38,7 +38,7 @@ class WebhookProcessor
     }
 
     /**
-     * Processes an incoming webhook request from the portal.
+     * Processes an incoming webhook request from the WeArePlanet Portal.
      *
      * Webhooks in this system are state-driven. Instead of just processing the
      * "current" state sent in the payload, this processor calculates a "transition path"
@@ -175,7 +175,17 @@ class WebhookProcessor
             }
 
         } catch (\InvalidArgumentException $e) {
-            $this->logger->warning('Webhook validation failed.', ['exception' => $e]);
+            // Normalized for the same reason as the transient branch above: a rejected
+            // payload is an expected outcome, not a fault to surface with a trace.
+            $this->logger->warning(
+                'Webhook validation failed.',
+                [
+                    'entityId' => $entityId,
+                    'spaceId' => $spaceId,
+                    'listener' => $technicalName,
+                    'reason' => $e->getMessage(),
+                ],
+            );
         } catch (TransientWebhookException $e) {
             // Transient Failure Hook: same recovery as the generic handler, but
             // the consumer told us this is a temporary, self-healing state
@@ -183,10 +193,23 @@ class WebhookProcessor
             if ($context && $webhookListener) {
                 $this->lifecycleHandler->onFailure($webhookListener, $context, $e);
             }
-            $this->logger->info('Webhook processing delayed: transient condition (will be retried).', ['exception' => $e]);
+            // The reason travels as a normalized string in context, never as a raw
+            // Throwable: a caught, self-healing condition must not render like an
+            // unhandled error. How a backend stringifies a Throwable is its own
+            // business — including file-and-line fragments that read as a stack trace —
+            // so nothing below error level relies on that.
+            $this->logger->info(
+                'Webhook processing delayed: transient condition (will be retried).',
+                [
+                    'entityId' => $entityId,
+                    'spaceId' => $spaceId,
+                    'listener' => $technicalName,
+                    'reason' => $e->getMessage(),
+                ],
+            );
 
             // Still re-throw as CommandException so the entry-point returns a
-            // 5xx and the portal retries the delivery.
+            // 5xx and the WeArePlanet Portal retries the delivery.
             throw new CommandException(
                 "Webhook command execution failed for entity {$entityId} with listener {$technicalName} under space {$spaceId}.",
                 new LocalizedString('Webhook command execution failed.'),
@@ -201,7 +224,7 @@ class WebhookProcessor
             $this->logger->error('Webhook processing failed.', ['exception' => $e]);
 
             // We re-throw as CommandException to signal the entry-point (Controller)
-            // that it should return a 5xx error. This instructs the portal to
+            // that it should return a 5xx error. This instructs the WeArePlanet Portal to
             // retry the webhook later, which is essential for transient failures (DB/Network).
             throw new CommandException(
                 "Webhook command execution failed for entity {$entityId} with listener {$technicalName} under space {$spaceId}.",

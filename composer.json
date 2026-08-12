@@ -15,7 +15,7 @@
     },
     "require": {
         "php": ">=8.2",
-        "weareplanet/sdk": "^4.8"
+        "weareplanet/sdk": "^4.9"
     },
     "require-dev": {
         "phpunit/phpunit": "^11.5",

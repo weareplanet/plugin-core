@@ -10,7 +10,7 @@ use WeArePlanet\PluginCore\SharedKernel\StringSanitizer;
 /**
  * Custom attribute attached to a {@see LineItem}.
  *
- * The portal renders attributes as `label: value` pairs (e.g. "Size: M"), so
+ * The WeArePlanet Portal renders attributes as `label: value` pairs (e.g. "Size: M"), so
  * both halves are first-class on this DTO instead of being collapsed into a
  * plain string.
  *
@@ -27,7 +27,7 @@ class LineItemAttribute
     public readonly string $value;
 
     /**
-     * @param string $id Portal-side attribute identifier (e.g. "option_144"),
+     * @param string $id WeArePlanet Portal-side attribute identifier (e.g. "option_144"),
      *                   used as the payload key when sent to the gateway.
      * @param string $label Human-readable attribute label (e.g. "Size").
      * @param string $value Attribute value (e.g. "M").

@@ -57,7 +57,7 @@ class RefundCalculatorTest extends TestCase
     public function testPriceReductionWithNoUnitsReturned(): void
     {
         // 2 units, no stock returned, but a 10.00 per-unit price reduction on
-        // the 2 remaining units => 20.00 total, matching docs/Refund/README.md.
+        // the 2 remaining units => 20.00 total, matching docs/3-Post-Payment/Refund.md.
         $originalItem = $this->makeLineItem(quantity: 2, unitPriceIncludingTax: 150.00);
         $reduction = new RefundLineItem('sku-123', returnedQuantity: 0, unitPriceReduction: 10.00);
 

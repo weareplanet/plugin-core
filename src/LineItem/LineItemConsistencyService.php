@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\LineItem;
 
-use WeArePlanet\PluginCore\Currency\CurrencyRoundingService;
+use WeArePlanet\PluginCore\GlobalData\Currency\CurrencyRoundingService;
 use WeArePlanet\PluginCore\LineItem\Exception\LineItemConsistencyException;
 use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
@@ -172,7 +172,7 @@ class LineItemConsistencyService
      * Most payment gateways do not support transactions with a total amount <= 0.
      * This occurs when discounts exceed the value of the products (e.g. combined gift cards).
      * We cap the discounts proportionally to keep the total at exactly zero, allowing
-     * the transaction to be created as "Free" in the portal.
+     * the transaction to be created as "Free" in the WeArePlanet Portal.
      *
      * @param LineItem[] $lineItems
      * @return LineItemCollection The sanitized list (cloned to avoid side effects).

@@ -5,6 +5,8 @@ namespace WeArePlanet\PluginCore\Examples\Common;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use Stringable;
 
+// 📖 Concept documentation: See docs/examples/Common/README.md
+
 class SimpleLogger implements \WeArePlanet\PluginCore\Log\LoggerInterface
 {
     public function emergency(Stringable|string $message, array $context = []): void

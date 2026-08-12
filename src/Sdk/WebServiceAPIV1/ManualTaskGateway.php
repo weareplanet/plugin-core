@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV1;
 
-use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
 use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
@@ -26,14 +25,40 @@ class ManualTaskGateway implements ManualTaskGatewayInterface
     use DomainLoggerTrait;
 
     /**
-     * @param SdkProvider $provider The SDK provider.
+     * @param SdkProvider $sdkProvider The SDK provider.
      * @param LoggerInterface $logger The logger instance.
      */
     public function __construct(
-        private readonly SdkProvider $provider,
+        private readonly SdkProvider $sdkProvider,
         LoggerInterface $logger,
     ) {
         $this->initializeLogger($logger);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function countAll(int $spaceId): int
+    {
+        try {
+            /** @var SdkManualTaskService $service */
+            $service = $this->sdkProvider->getService(SdkManualTaskService::class);
+
+            // No filter: the endpoint then counts every manual task in the space.
+            return (int)$service->count($spaceId);
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to count manual tasks from SDK.', [
+                'spaceId' => $spaceId,
+                'exception' => $e,
+            ]);
+            throw SdkProvider::wrapException(
+                $e,
+                ManualTaskException::class,
+                'count',
+                ['spaceId' => $spaceId],
+                'Failed to retrieve manual tasks. Please try again or contact support.',
+            );
+        }
     }
 
     /**
@@ -43,7 +68,7 @@ class ManualTaskGateway implements ManualTaskGatewayInterface
     {
         try {
             /** @var SdkManualTaskService $service */
-            $service = $this->provider->getService(SdkManualTaskService::class);
+            $service = $this->sdkProvider->getService(SdkManualTaskService::class);
 
             $filter = new SdkEntityQueryFilter();
             $filter->setType(SdkEntityQueryFilterType::LEAF);
@@ -58,11 +83,14 @@ class ManualTaskGateway implements ManualTaskGatewayInterface
                 'state' => $state->value,
                 'exception' => $e,
             ]);
-            throw new ManualTaskException(
-                sprintf('Failed to count manual tasks for space %d.', $spaceId),
-                new LocalizedString('Failed to retrieve manual tasks. Please try again or contact support.'),
+            throw SdkProvider::wrapException(
                 $e,
+                ManualTaskException::class,
+                'count',
+                ['spaceId' => $spaceId, 'state' => $state->value],
+                'Failed to retrieve manual tasks. Please try again or contact support.',
             );
         }
     }
+
 }

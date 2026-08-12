@@ -9,7 +9,7 @@ use WeArePlanet\PluginCore\Webhook\Enum\WebhookListener as WebhookListenerEnum;
 /**
  * Interface WebhookManagementGatewayInterface
  *
- * Defines the contract for managing webhook URLs and listeners in the portal.
+ * Defines the contract for managing webhook URLs and listeners in the WeArePlanet Portal.
  */
 interface WebhookManagementGatewayInterface
 {
@@ -25,7 +25,7 @@ interface WebhookManagementGatewayInterface
      */
     public function createListener(int $spaceId, int $webhookUrlId, WebhookListenerEnum $entity, array $eventStates, string $name, bool $notifyEveryChange = false): WebhookListener;
     /**
-     * Creates a webhook URL definition in the portal.
+     * Creates a webhook URL definition in the WeArePlanet Portal.
      *
      * @param int $spaceId The space ID where the webhook URL is defined.
      * @param string $url The actual URL endpoint.
@@ -80,7 +80,7 @@ interface WebhookManagementGatewayInterface
     public function getWebhookUrls(int $spaceId, ?string $state = 'ACTIVE'): WebhookUrlCollection;
 
     /**
-     * Lists webhook listeners in the portal.
+     * Lists webhook listeners in the WeArePlanet Portal.
      *
      * @param int $spaceId
      * @return WebhookListenerCollection
@@ -88,7 +88,7 @@ interface WebhookManagementGatewayInterface
     public function listListeners(int $spaceId): WebhookListenerCollection;
 
     /**
-     * Lists webhook URL definitions in the portal.
+     * Lists webhook URL definitions in the WeArePlanet Portal.
      *
      * @param int $spaceId
      * @return WebhookUrlCollection

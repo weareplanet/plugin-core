@@ -10,6 +10,7 @@ use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Webhook\Command\WebhookCommandInterface;
 use WeArePlanet\PluginCore\Webhook\Enum\WebhookListener;
 use WeArePlanet\PluginCore\Webhook\Exception\CommandException;
+use WeArePlanet\PluginCore\Webhook\Exception\TransientWebhookException;
 use WeArePlanet\PluginCore\Webhook\Listener\WebhookListenerInterface;
 use WeArePlanet\PluginCore\Webhook\Listener\WebhookListenerRegistry;
 use WeArePlanet\PluginCore\Webhook\StateFetcherInterface;
@@ -236,5 +237,63 @@ class WebhookProcessorTest extends TestCase
         ]);
 
         $this->processor->process($this->requestMock);
+    }
+
+    public function testTransientConditionIsLoggedWithItsReasonAndWithoutARawException(): void
+    {
+        // A TransientWebhookException is a deliberately caught, self-healing condition.
+        // Handing the raw Throwable to the logger makes backends render it with a
+        // file-and-line fragment that reads like an unhandled error, so the reason goes
+        // into the message instead and no 'exception' key is passed at this level.
+        $reason = 'order 000000009 is not yet authorized - deferring capture for retry.';
+
+        $command = $this->createMock(WebhookCommandInterface::class);
+        $command->method('execute')->willThrowException(new TransientWebhookException($reason));
+        $listener = $this->createMock(WebhookListenerInterface::class);
+        $listener->method('getCommand')->willReturn($command);
+
+        $this->stateFetcherMock->method('fetchState')->willReturn('AUTHORIZED');
+        $this->lifecycleHandlerMock->method('getLastProcessedState')->willReturn('PENDING');
+        $this->validatorMock->method('getTransitionPath')->willReturn(['AUTHORIZED']);
+        $this->registryMock->method('findListener')->willReturn($listener);
+        $this->lifecycleHandlerMock->method('preProcess')->willReturn(true);
+
+        $this->requestMock->method('get')->willReturnMap([
+            ['listenerEntityTechnicalName', null, 'Transaction'],
+            ['entityId', null, 123],
+            ['spaceId', null, 405],
+        ]);
+
+        // The processor also logs the transition path at info, so collect every info
+        // record and assert against the one describing the delay.
+        $infoRecords = [];
+        $this->loggerMock->method('info')
+            ->willReturnCallback(function (string $message, array $context = []) use (&$infoRecords): void {
+                $infoRecords[] = [$message, $context];
+            });
+
+        try {
+            $this->processor->process($this->requestMock);
+            $this->fail('Expected a CommandException.');
+        } catch (CommandException $e) {
+            // Expected: the transient branch still re-throws so the WeArePlanet Portal retries.
+        }
+
+        $delayed = array_values(array_filter(
+            $infoRecords,
+            static fn (array $record): bool => str_contains($record[0], 'delayed'),
+        ));
+
+        $this->assertCount(1, $delayed, 'Expected exactly one delay record at info level.');
+        [$message, $context] = $delayed[0];
+
+        // The reason lives in context only — repeating it in the message would print
+        // it twice in a line-formatted backend.
+        $this->assertStringNotContainsString($reason, $message);
+        $this->assertSame($reason, $context['reason']);
+        // And no raw Throwable is handed over for a backend to render as a trace.
+        $this->assertArrayNotHasKey('exception', $context);
+        $this->assertSame(123, $context['entityId']);
+        $this->assertSame(405, $context['spaceId']);
     }
 }

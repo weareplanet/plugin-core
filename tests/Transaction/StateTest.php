@@ -13,6 +13,25 @@ class StateTest extends TestCase
     /**
      * @return array<string, array{0: State, 1: bool}>
      */
+    public static function allowsCompletionProvider(): array
+    {
+        return [
+            'CREATE does not allow completion' => [State::CREATE, false],
+            'PENDING does not allow completion' => [State::PENDING, false],
+            'CONFIRMED does not allow completion' => [State::CONFIRMED, false],
+            'PROCESSING does not allow completion' => [State::PROCESSING, false],
+            'FAILED does not allow completion' => [State::FAILED, false],
+            'AUTHORIZED allows completion' => [State::AUTHORIZED, true],
+            'VOIDED does not allow completion' => [State::VOIDED, false],
+            'COMPLETED does not allow completion' => [State::COMPLETED, false],
+            'FULFILL does not allow completion' => [State::FULFILL, false],
+            'DECLINE does not allow completion' => [State::DECLINE, false],
+        ];
+    }
+
+    /**
+     * @return array<string, array{0: State, 1: bool}>
+     */
     public static function allowsInvoiceManipulationProvider(): array
     {
         return [
@@ -83,6 +102,12 @@ class StateTest extends TestCase
             'FULFILL is paid-like' => [State::FULFILL, true],
             'DECLINE is not paid-like' => [State::DECLINE, false],
         ];
+    }
+
+    #[DataProvider('allowsCompletionProvider')]
+    public function testAllowsCompletion(State $state, bool $expected): void
+    {
+        $this->assertSame($expected, $state->allowsCompletion());
     }
 
     #[DataProvider('allowsInvoiceManipulationProvider')]

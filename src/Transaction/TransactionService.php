@@ -145,7 +145,8 @@ class TransactionService
             $this->logger->debug("Failed to retrieve failure message.", [
                 'transactionId' => $transactionId,
                 'spaceId' => $spaceId,
-                'exception' => $e,
+                // Swallowed on purpose — the caller falls back to a default message.
+                'reason' => $e->getMessage(),
             ]);
         }
         return $defaultMessage;
@@ -307,7 +308,9 @@ class TransactionService
                 $this->logger->notice("Update failed; falling back to CREATE.", [
                     'transactionId' => $context->transactionId,
                     'spaceId' => $context->spaceId,
-                    'exception' => $e,
+                    // Expected, self-healing path: the fallback below recovers from it,
+                    // so the reason is enough and a raw Throwable would misrepresent it.
+                    'reason' => $e->getMessage(),
                 ]);
                 $context->transactionId = null;
                 $result = $this->createTransaction($context);

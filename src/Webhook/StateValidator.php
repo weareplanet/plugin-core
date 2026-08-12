@@ -23,7 +23,7 @@ class StateValidator
      *
      * @param WebhookListenerEnum $listener The listener type.
      * @param string|null $lastProcessedState The state currently persisted in the shop.
-     * @param string $remoteState The new state reported by the portal.
+     * @param string $remoteState The new state reported by the WeArePlanet Portal.
      * @return string[]|null Array of states to process, empty if already at target, or null if invalid transition.
      */
     public function getTransitionPath(WebhookListenerEnum $listener, ?string $lastProcessedState, string $remoteState): ?array
@@ -81,7 +81,7 @@ class StateValidator
      * Validates if a raw string state is a recognized member of the listener's state machine.
      *
      * This protects the system from processing invalid or experimental states
-     * that might be introduced in the portal before the plugin is updated.
+     * that might be introduced in the WeArePlanet Portal before the plugin is updated.
      *
      * @param WebhookListenerEnum $listener
      * @param string $state

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV1;
 
-use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
 use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
@@ -31,11 +30,11 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
     use PaymentMethodMapperTrait;
 
     /**
-     * @param SdkProvider $provider The SDK provider.
+     * @param SdkProvider $sdkProvider The SDK provider.
      * @param LoggerInterface $logger The logger instance.
      */
     public function __construct(
-        private readonly SdkProvider $provider,
+        private readonly SdkProvider $sdkProvider,
         LoggerInterface $logger,
     ) {
         $this->initializeLogger($logger);
@@ -66,7 +65,7 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
     {
         try {
             /** @var SdkPaymentMethodConfigurationService $service */
-            $service = $this->provider->getService(SdkPaymentMethodConfigurationService::class);
+            $service = $this->sdkProvider->getService(SdkPaymentMethodConfigurationService::class);
 
             $config = $service->read($spaceId, $id);
 
@@ -77,10 +76,12 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
                 'spaceId' => $spaceId,
                 'exception' => $e,
             ]);
-            throw new PaymentMethodException(
-                sprintf('Payment method %d not found.', $id),
-                new LocalizedString('The payment method could not be retrieved.'),
+            throw SdkProvider::wrapException(
                 $e,
+                PaymentMethodException::class,
+                'read',
+                ['spaceId' => $spaceId, 'paymentMethodId' => $id],
+                'The payment method could not be retrieved.',
             );
         }
     }
@@ -92,7 +93,7 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
     {
         try {
             /** @var SdkPaymentMethodConfigurationService $service */
-            $service = $this->provider->getService(SdkPaymentMethodConfigurationService::class);
+            $service = $this->sdkProvider->getService(SdkPaymentMethodConfigurationService::class);
 
             $query = new SdkEntityQuery();
 
@@ -112,10 +113,12 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
                 'spaceId' => $spaceId,
                 'exception' => $e,
             ]);
-            throw new PaymentMethodException(
-                'Failed to fetch payment methods: ' . $e->getMessage(),
-                new LocalizedString('The payment methods could not be retrieved.'),
+            throw SdkProvider::wrapException(
                 $e,
+                PaymentMethodException::class,
+                'search',
+                ['spaceId' => $spaceId],
+                'The payment methods could not be retrieved.',
             );
         }
     }
