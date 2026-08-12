@@ -36,6 +36,11 @@ class InvoiceGateway implements InvoiceGatewayInterface
 
     public function find(int $spaceId, int $invoiceId): ?Invoice
     {
+        $this->logger->debug('Gateway: Finding transaction invoice.', [
+            'invoiceId' => $invoiceId,
+            'spaceId' => $spaceId,
+        ]);
+
         try {
             $sdkInvoice = $this->transactionInvoicesService->getPaymentTransactionsInvoicesId($invoiceId, $spaceId);
             return $this->mapToInvoice($sdkInvoice);
@@ -53,10 +58,12 @@ class InvoiceGateway implements InvoiceGatewayInterface
                 'invoiceId' => $invoiceId,
                 'spaceId' => $spaceId,
             ]);
-            throw new InvoiceException(
-                "Failed to find transaction invoice {$invoiceId}: " . $e->getMessage(),
-                new LocalizedString('An error occurred while retrieving the transaction invoice.'),
+            throw SdkProvider::wrapException(
                 $e,
+                InvoiceException::class,
+                'read',
+                ['spaceId' => $spaceId, 'invoiceId' => $invoiceId],
+                'An error occurred while retrieving the transaction invoice.',
             );
         }
     }
@@ -77,10 +84,12 @@ class InvoiceGateway implements InvoiceGatewayInterface
                 'invoiceId' => $invoiceId,
                 'spaceId' => $spaceId,
             ]);
-            throw new InvoiceException(
-                "Failed to read transaction invoice {$invoiceId}: " . $e->getMessage(),
-                new LocalizedString('An error occurred while retrieving the transaction invoice.'),
+            throw SdkProvider::wrapException(
                 $e,
+                InvoiceException::class,
+                'read',
+                ['spaceId' => $spaceId, 'invoiceId' => $invoiceId],
+                'An error occurred while retrieving the transaction invoice.',
             );
         }
     }
@@ -111,10 +120,12 @@ class InvoiceGateway implements InvoiceGatewayInterface
                 'exception' => $e,
                 'spaceId' => $spaceId,
             ]);
-            throw new InvoiceException(
-                'Failed to search transaction invoices: ' . $e->getMessage(),
-                new LocalizedString('An error occurred while searching transaction invoices.'),
+            throw SdkProvider::wrapException(
                 $e,
+                InvoiceException::class,
+                'search',
+                ['spaceId' => $spaceId],
+                'An error occurred while searching transaction invoices.',
             );
         }
     }

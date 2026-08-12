@@ -92,7 +92,7 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
             'name' => $name,
         ]);
 
-        return $this->wrapSdkCall(function () use ($spaceId, $webhookUrlId, $entity, $eventStates, $name, $notifyEveryChange): WebhookListener {
+        try {
             $sdkEntity = new SdkWebhookListenerCreate();
             $sdkEntity->setName($name);
             $sdkEntity->setUrl($webhookUrlId);
@@ -104,7 +104,17 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
             // V2: postWebhooksListeners returns the fully hydrated listener entity.
             $result = $this->webhookListenerService->postWebhooksListeners($spaceId, $sdkEntity);
             return $this->mapToWebhookListener($result);
-        }, 'Failed to create the webhook listener.', ['spaceId' => $spaceId, 'webhookUrlId' => $webhookUrlId]);
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to create the webhook listener.', ['spaceId' => $spaceId, 'webhookUrlId' => $webhookUrlId, 'exception' => $e]);
+
+            throw SdkProvider::wrapException(
+                $e,
+                WebhookManagementException::class,
+                'createListener',
+                ['spaceId' => $spaceId, 'webhookUrlId' => $webhookUrlId],
+                'Failed to create the webhook listener.',
+            );
+        }
     }
 
     public function createUrl(int $spaceId, string $url, string $name): WebhookUrl
@@ -115,7 +125,7 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
             'url' => $url,
         ]);
 
-        return $this->wrapSdkCall(function () use ($spaceId, $url, $name): WebhookUrl {
+        try {
             $entity = new SdkWebhookUrlCreate();
             $entity->setUrl($url);
             $entity->setName($name);
@@ -125,7 +135,17 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
             $result = $this->webhookUrlService->postWebhooksUrls($spaceId, $entity);
 
             return $this->mapToWebhookUrl($result);
-        }, 'Failed to create the webhook URL.', ['spaceId' => $spaceId, 'url' => $url]);
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to create the webhook URL.', ['spaceId' => $spaceId, 'url' => $url, 'exception' => $e]);
+
+            throw SdkProvider::wrapException(
+                $e,
+                WebhookManagementException::class,
+                'createUrl',
+                ['spaceId' => $spaceId, 'url' => $url],
+                'Failed to create the webhook URL.',
+            );
+        }
     }
 
     public function deleteListener(int $spaceId, int $listenerId): void
@@ -135,9 +155,19 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
             'spaceId' => $spaceId,
         ]);
 
-        $this->wrapSdkCall(function () use ($spaceId, $listenerId): void {
+        try {
             $this->webhookListenerService->deleteWebhooksListenersId($listenerId, $spaceId);
-        }, 'Failed to delete the webhook listener.', ['spaceId' => $spaceId, 'listenerId' => $listenerId]);
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to delete the webhook listener.', ['spaceId' => $spaceId, 'listenerId' => $listenerId, 'exception' => $e]);
+
+            throw SdkProvider::wrapException(
+                $e,
+                WebhookManagementException::class,
+                'deleteListener',
+                ['spaceId' => $spaceId, 'listenerId' => $listenerId],
+                'Failed to delete the webhook listener.',
+            );
+        }
     }
 
     public function deleteUrl(int $spaceId, int $webhookUrlId): void
@@ -147,9 +177,19 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
             'spaceId' => $spaceId,
         ]);
 
-        $this->wrapSdkCall(function () use ($spaceId, $webhookUrlId): void {
+        try {
             $this->webhookUrlService->deleteWebhooksUrlsId($webhookUrlId, $spaceId);
-        }, 'Failed to delete the webhook URL.', ['spaceId' => $spaceId, 'webhookUrlId' => $webhookUrlId]);
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to delete the webhook URL.', ['spaceId' => $spaceId, 'webhookUrlId' => $webhookUrlId, 'exception' => $e]);
+
+            throw SdkProvider::wrapException(
+                $e,
+                WebhookManagementException::class,
+                'deleteUrl',
+                ['spaceId' => $spaceId, 'webhookUrlId' => $webhookUrlId],
+                'Failed to delete the webhook URL.',
+            );
+        }
     }
 
     public function getUrl(int $spaceId, int $webhookUrlId): WebhookUrl
@@ -159,11 +199,21 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
             'spaceId' => $spaceId,
         ]);
 
-        return $this->wrapSdkCall(function () use ($spaceId, $webhookUrlId): WebhookUrl {
+        try {
             $sdkUrl = $this->webhookUrlService->getWebhooksUrlsId($webhookUrlId, $spaceId);
 
             return $this->mapToWebhookUrl($sdkUrl);
-        }, 'Failed to read the webhook URL.', ['spaceId' => $spaceId, 'webhookUrlId' => $webhookUrlId]);
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to read the webhook URL.', ['spaceId' => $spaceId, 'webhookUrlId' => $webhookUrlId, 'exception' => $e]);
+
+            throw SdkProvider::wrapException(
+                $e,
+                WebhookManagementException::class,
+                'getUrl',
+                ['spaceId' => $spaceId, 'webhookUrlId' => $webhookUrlId],
+                'Failed to read the webhook URL.',
+            );
+        }
     }
 
     public function getWebhookListeners(int $spaceId, int $urlId): WebhookListenerCollection
@@ -173,14 +223,24 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
             'spaceId' => $spaceId,
         ]);
 
-        return $this->wrapSdkCall(function () use ($spaceId, $urlId): WebhookListenerCollection {
+        try {
             // V2 Search: query string
             $query = "url.id:$urlId";
             $results = $this->webhookListenerService->getWebhooksListenersSearch($spaceId, null, 100, null, null, $query);
             $data = (is_object($results) && method_exists($results, 'getData')) ? $results->getData() : (array)$results;
 
             return new WebhookListenerCollection(...array_map([$this, 'mapToWebhookListener'], $data));
-        }, 'Failed to fetch the webhook listeners.', ['spaceId' => $spaceId, 'urlId' => $urlId]);
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to fetch the webhook listeners.', ['spaceId' => $spaceId, 'urlId' => $urlId, 'exception' => $e]);
+
+            throw SdkProvider::wrapException(
+                $e,
+                WebhookManagementException::class,
+                'getWebhookListeners',
+                ['spaceId' => $spaceId, 'urlId' => $urlId],
+                'Failed to fetch the webhook listeners.',
+            );
+        }
     }
 
     public function getWebhookUrls(int $spaceId, ?string $state = 'ACTIVE'): WebhookUrlCollection
@@ -190,7 +250,7 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
             'state' => $state,
         ]);
 
-        return $this->wrapSdkCall(function () use ($spaceId, $state): WebhookUrlCollection {
+        try {
             if ($state !== null) {
                 // Filter is applied server-side via API search query.
                 $results = $this->webhookUrlService->getWebhooksUrlsSearch(
@@ -211,33 +271,63 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
                 : (array) $results;
 
             return new WebhookUrlCollection(...array_map([$this, 'mapToWebhookUrl'], $data));
-        }, 'Failed to fetch the webhook URLs.', ['spaceId' => $spaceId]);
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to fetch the webhook URLs.', ['spaceId' => $spaceId, 'exception' => $e]);
+
+            throw SdkProvider::wrapException(
+                $e,
+                WebhookManagementException::class,
+                'getWebhookUrls',
+                ['spaceId' => $spaceId],
+                'Failed to fetch the webhook URLs.',
+            );
+        }
     }
 
     public function listListeners(int $spaceId): WebhookListenerCollection
     {
         $this->logger->debug("Listing Webhook Listeners.", ['spaceId' => $spaceId]);
 
-        return $this->wrapSdkCall(function () use ($spaceId): WebhookListenerCollection {
+        try {
             $results = $this->webhookListenerService->getWebhooksListeners($spaceId, null, null, null, 100, null);
             $data = (is_object($results) && method_exists($results, 'getData')) ? $results->getData() : (array)$results;
 
             return new WebhookListenerCollection(...array_map([$this, 'mapToWebhookListener'], $data));
-        }, 'Failed to list the webhook listeners.', ['spaceId' => $spaceId]);
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to list the webhook listeners.', ['spaceId' => $spaceId, 'exception' => $e]);
+
+            throw SdkProvider::wrapException(
+                $e,
+                WebhookManagementException::class,
+                'listListeners',
+                ['spaceId' => $spaceId],
+                'Failed to list the webhook listeners.',
+            );
+        }
     }
 
     public function listUrls(int $spaceId): WebhookUrlCollection
     {
         $this->logger->debug("Listing Webhook URLs.", ['spaceId' => $spaceId]);
 
-        return $this->wrapSdkCall(function () use ($spaceId): WebhookUrlCollection {
+        try {
             // V2 Search: using generic query or empty for all.
             // Use the standard Webhook URL retrieval method.
             $results = $this->webhookUrlService->getWebhooksUrls($spaceId, null, null, null, 100, null);
             $data = (is_object($results) && method_exists($results, 'getData')) ? $results->getData() : (array)$results;
 
             return new WebhookUrlCollection(...array_map([$this, 'mapToWebhookUrl'], $data));
-        }, 'Failed to list the webhook URLs.', ['spaceId' => $spaceId]);
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to list the webhook URLs.', ['spaceId' => $spaceId, 'exception' => $e]);
+
+            throw SdkProvider::wrapException(
+                $e,
+                WebhookManagementException::class,
+                'listUrls',
+                ['spaceId' => $spaceId],
+                'Failed to list the webhook URLs.',
+            );
+        }
     }
 
     public function updateListener(int $spaceId, int $listenerId, WebhookListenerEnum $entity, array $eventStates): WebhookListener
@@ -248,7 +338,7 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
             'entity' => $entity->value,
         ]);
 
-        return $this->wrapSdkCall(function () use ($spaceId, $listenerId, $eventStates): WebhookListener {
+        try {
             $currentListener = $this->webhookListenerService->getWebhooksListenersId($listenerId, $spaceId);
 
             $update = new SdkWebhookListenerUpdate();
@@ -259,7 +349,17 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
             $result = $this->webhookListenerService->patchWebhooksListenersId($listenerId, $spaceId, $update);
 
             return $this->mapToWebhookListener($result);
-        }, 'Failed to update the webhook listener.', ['spaceId' => $spaceId, 'listenerId' => $listenerId]);
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to update the webhook listener.', ['spaceId' => $spaceId, 'listenerId' => $listenerId, 'exception' => $e]);
+
+            throw SdkProvider::wrapException(
+                $e,
+                WebhookManagementException::class,
+                'updateListener',
+                ['spaceId' => $spaceId, 'listenerId' => $listenerId],
+                'Failed to update the webhook listener.',
+            );
+        }
     }
 
     public function updateUrl(int $spaceId, int $webhookUrlId, string $newUrl): WebhookUrl
@@ -270,7 +370,7 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
             'newUrl' => $newUrl,
         ]);
 
-        return $this->wrapSdkCall(function () use ($spaceId, $webhookUrlId, $newUrl): WebhookUrl {
+        try {
             $currentUrl = $this->webhookUrlService->getWebhooksUrlsId($webhookUrlId, $spaceId);
 
             $update = new SdkWebhookUrlUpdate();
@@ -283,30 +383,17 @@ class WebhookManagementGateway implements WebhookManagementGatewayInterface
             $result = $this->webhookUrlService->patchWebhooksUrlsId($webhookUrlId, $spaceId, $update);
 
             return $this->mapToWebhookUrl($result);
-        }, 'Failed to update the webhook URL.', ['spaceId' => $spaceId, 'webhookUrlId' => $webhookUrlId]);
-    }
-
-    /**
-     * Runs an SDK interaction, wrapping any failure in a domain
-     * WebhookManagementException so SDK exceptions never leak out.
-     *
-     * @template T
-     * @param callable(): T $operation
-     * @param string $errorMessage
-     * @param array<string, mixed> $logContext
-     * @return T
-     */
-    private function wrapSdkCall(callable $operation, string $errorMessage, array $logContext = []): mixed
-    {
-        try {
-            return $operation();
         } catch (\Throwable $e) {
-            $this->logger->error($errorMessage, $logContext + ['exception' => $e]);
-            throw new WebhookManagementException(
-                $errorMessage . ' ' . $e->getMessage(),
-                new LocalizedString($errorMessage),
+            $this->logger->error('Failed to update the webhook URL.', ['spaceId' => $spaceId, 'webhookUrlId' => $webhookUrlId, 'exception' => $e]);
+
+            throw SdkProvider::wrapException(
                 $e,
+                WebhookManagementException::class,
+                'updateUrl',
+                ['spaceId' => $spaceId, 'webhookUrlId' => $webhookUrlId],
+                'Failed to update the webhook URL.',
             );
         }
     }
+
 }

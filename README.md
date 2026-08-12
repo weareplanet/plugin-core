@@ -30,43 +30,55 @@ The library is divided into major functional components, each designed for robus
 
 ### 1. Checkout Engine
 The core of the payment flow. Handles transaction creation and management with a sophisticated "upsert" strategy, ensuring seamless navigation without duplicate charges.
-*   **[Read Checkout Docs](docs/Checkout/README.md)**
+*   **[Read Checkout Docs](docs/2-Checkout-Flow/Checkout.md)**
 
 ### 2. Webhook Processor
 The engine for handling asynchronous events from the WeArePlanet Portal. It's built for scale and high concurrency.
-*   **[Read Webhook Processor Docs](docs/Webhook/Processor/README.md)**
+*   **[Read Webhook Processor Docs](docs/4-Background-Tasks/Webhook-Processor.md)**
 
 ### 3. Webhook Management
 Tools for programmatically managing webhooks in the WeArePlanet Portal, including URL creation and Listener setup.
-*   **[Read Webhook Management Docs](docs/Webhook/Management/README.md)**
+*   **[Read Webhook Management Docs](docs/4-Background-Tasks/Webhook-Management.md)**
 
 ### 4. Transaction Completion (Capture & Void)
 Manage the final stages of the transaction lifecycle. Finalize payments (Capture) or cancel them (Void) with dedicated service handlers.
-*   **[Read Completion Docs](docs/Completion/README.md)**
+*   **[Read Completion Docs](docs/3-Post-Payment/Completion.md)**
 
 ### 5. Recurring Payments
 Enables Merchant Initiated Transactions (MIT) for seamless subscription renewals and unscheduled subsequent charges using saved tokens.
-*   **[Read Recurring Docs](docs/Recurring/README.md)**
+*   **[Read Recurring Docs](docs/4-Background-Tasks/Recurring.md)**
 
 ### 6. Refund Management
 Support for full and partial refunds. Includes precise line-item logic and validation to prevent over-refunding.
-*   **[Read Refund Docs](docs/Refund/README.md)**
+*   **[Read Refund Docs](docs/3-Post-Payment/Refund.md)**
 
 ### 7. Document Management
 Retrieve official PDF documents (Invoices, Packing Slips, Credit Notes) directly from the WeArePlanet Portal for the merchants.
-*   **[Read Document Docs](docs/Document/README.md)**
+*   **[Read Document Docs](docs/3-Post-Payment/Document.md)**
 
 ### 8. Payment Method Service
 A centralized service to fetch available payment method configurations from the WeArePlanet Portal, ensuring the shop systems have an up-to-date view of available payment methods.
-*   **[Read Payment Method Docs](docs/PaymentMethod/README.md)**
+*   **[Read Payment Method Docs](docs/2-Checkout-Flow/PaymentMethod.md)**
 
 ### 9. Manual Task Tracking
 Check how many manual tasks (e.g. a manual risk review) are outstanding for a space, so the shop can surface a reminder to the merchant before a transaction can proceed.
-*   **[Read Manual Task Docs](docs/ManualTask/README.md)**
+*   **[Read Manual Task Docs](docs/4-Background-Tasks/ManualTask.md)**
 
 ### 10. Token Management
 Saved payment credentials for recurring/Merchant Initiated Transactions, with explicit control over how and when tokenization is applied at checkout.
-*   **[Read Token Docs](docs/Token/README.md)**
+*   **[Read Token Docs](docs/2-Checkout-Flow/Token.md)**
+
+### 11. Charge
+Charge a transaction through its charge flow, and read the resulting charge attempts along with the labels the payment processor reported, such as the card brand or the acquirer reference.
+*   **[Read Charge Docs](docs/2-Checkout-Flow/Charge.md)**
+
+### 12. Global Data
+Look up the currencies, languages, payment connectors, and label descriptors the WeArePlanet Portal supports — global data, not tied to any space — through the single `GlobalDataService` facade.
+*   **[Read Global Data Docs](docs/1-Getting-Started/GlobalData.md)**
+
+### 13. Plugin Identification
+Name your shop system and plugin version on every API call, so the WeArePlanet Portal can trace a request back to the installation that made it. Optional, and configured once on the `SdkProvider`.
+*   **[Read Plugin Identification Docs](docs/1-Getting-Started/PluginIdentification.md)**
 
 ---
 
@@ -92,4 +104,4 @@ composer test
 ```
 
 ## License
-[License Information Here]
+[Apache-2.0](LICENSE.txt)

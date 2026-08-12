@@ -31,11 +31,11 @@ class ManualTaskGateway implements ManualTaskGatewayInterface
     private const PAGE_SIZE = 100;
 
     /**
-     * @param SdkProvider $provider The SDK provider.
+     * @param SdkProvider $sdkProvider The SDK provider.
      * @param LoggerInterface $logger The logger instance.
      */
     public function __construct(
-        private readonly SdkProvider $provider,
+        private readonly SdkProvider $sdkProvider,
         LoggerInterface $logger,
     ) {
         $this->initializeLogger($logger);
@@ -48,7 +48,7 @@ class ManualTaskGateway implements ManualTaskGatewayInterface
     {
         try {
             /** @var SdkManualTasksService $service */
-            $service = $this->provider->getService(SdkManualTasksService::class);
+            $service = $this->sdkProvider->getService(SdkManualTasksService::class);
 
             $query = sprintf('state:%s', $state->value);
             $count = 0;
@@ -75,11 +75,55 @@ class ManualTaskGateway implements ManualTaskGatewayInterface
                 'state' => $state->value,
                 'exception' => $e,
             ]);
-            throw new ManualTaskException(
-                sprintf('Failed to count manual tasks for space %d.', $spaceId),
-                new LocalizedString('Failed to retrieve manual tasks. Please try again or contact support.'),
+            throw SdkProvider::wrapException(
                 $e,
+                ManualTaskException::class,
+                'getManualTasksSearch',
+                ['spaceId' => $spaceId, 'state' => $state->value],
+                'Failed to retrieve manual tasks. Please try again or contact support.',
             );
         }
     }
+
+    /**
+     * @inheritDoc
+     */
+    public function countAll(int $spaceId): int
+    {
+        try {
+            /** @var SdkManualTasksService $service */
+            $service = $this->sdkProvider->getService(SdkManualTasksService::class);
+
+            $count = 0;
+            $offset = 0;
+
+            // No query: the search then returns every manual task in the space.
+            do {
+                $page = $service->getManualTasksSearch(
+                    $spaceId,
+                    null,
+                    self::PAGE_SIZE,
+                    $offset,
+                );
+
+                $count += count($page->getData());
+                $offset += self::PAGE_SIZE;
+            } while ($page->getHasMore());
+
+            return $count;
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to count manual tasks from SDK.', [
+                'spaceId' => $spaceId,
+                'exception' => $e,
+            ]);
+            throw SdkProvider::wrapException(
+                $e,
+                ManualTaskException::class,
+                'getManualTasksSearch',
+                ['spaceId' => $spaceId],
+                'Failed to retrieve manual tasks. Please try again or contact support.',
+            );
+        }
+    }
+
 }

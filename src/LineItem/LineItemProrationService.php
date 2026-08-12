@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\LineItem;
 
-use WeArePlanet\PluginCore\Currency\CurrencyRoundingService;
+use WeArePlanet\PluginCore\GlobalData\Currency\CurrencyRoundingService;
 use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
 use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;

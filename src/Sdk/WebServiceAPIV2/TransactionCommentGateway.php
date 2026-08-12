@@ -52,7 +52,7 @@ class TransactionCommentGateway implements TransactionCommentGatewayInterface
     {
         try {
             $this->logger->debug(
-                'Fetching comments for Transaction {transactionId} in Space {spaceId} (V2).',
+                'Fetching transaction comments.',
                 [
                     'spaceId' => $spaceId,
                     'transactionId' => $transactionId,
@@ -64,7 +64,7 @@ class TransactionCommentGateway implements TransactionCommentGatewayInterface
             return new TransactionCommentCollection(...array_map([$this, 'mapToTransactionComment'], $items));
         } catch (\Throwable $e) {
             $this->logger->error(
-                'Failed to fetch transaction comments: {errorMessage}',
+                'Failed to fetch transaction comments.',
                 [
                     'errorMessage' => $e->getMessage(),
                     'exception' => $e,
@@ -72,10 +72,12 @@ class TransactionCommentGateway implements TransactionCommentGatewayInterface
                     'transactionId' => $transactionId,
                 ],
             );
-            throw new TransactionCommentException(
-                "Failed to fetch comments for transaction {$transactionId}: " . $e->getMessage(),
-                new LocalizedString('An error occurred while fetching transaction comments.'),
+            throw SdkProvider::wrapException(
                 $e,
+                TransactionCommentException::class,
+                'search',
+                ['spaceId' => $spaceId, 'transactionId' => $transactionId],
+                'An error occurred while fetching transaction comments.',
             );
         }
     }

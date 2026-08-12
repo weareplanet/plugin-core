@@ -4,6 +4,8 @@ namespace WeArePlanet\PluginCore\Examples\Common;
 
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 
+// 📖 Concept documentation: See docs/examples/Common/README.md
+
 /**
  * A simple logger implementation that outputs to stdout.
  */

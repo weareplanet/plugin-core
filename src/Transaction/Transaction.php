@@ -128,4 +128,19 @@ class Transaction
      * @var Token|null The token used for the transaction.
      */
     public ?Token $token = null;
+
+    /**
+     * @var TransactionPaymentMethod|null The immutable snapshot of the payment method and
+     * connector this transaction was processed with, as they were at processing time — not
+     * the merchant's current payment method configuration. Null when the API reported no
+     * payment connector configuration, e.g. before a payment method has been selected.
+     */
+    public ?TransactionPaymentMethod $paymentMethod = null;
+
+    /**
+     * @var TransactionEnvironment|null The immutable snapshot of the environment this
+     * transaction was processed in (space view and language), as it was at processing
+     * time — not the shop's current settings.
+     */
+    public ?TransactionEnvironment $environment = null;
 }

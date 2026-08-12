@@ -9,7 +9,7 @@ use WeArePlanet\PluginCore\SharedKernel\JsonStringableTrait;
 /**
  * Class WebhookListener
  *
- * DTO representing a Webhook Listener in the portal.
+ * DTO representing a Webhook Listener in the WeArePlanet Portal.
  */
 class WebhookListener
 {

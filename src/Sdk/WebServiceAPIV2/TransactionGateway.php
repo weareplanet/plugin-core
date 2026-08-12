@@ -111,10 +111,12 @@ class TransactionGateway implements TransactionGatewayInterface
                 'transactionId' => $transactionId,
                 'spaceId' => $spaceId,
             ]);
-            throw new TransactionException(
-                "Unable to confirm transaction {$transactionId}: " . $e->getMessage(),
-                new LocalizedString('Unable to confirm the transaction.'),
+            throw SdkProvider::wrapException(
                 $e,
+                TransactionException::class,
+                'postPaymentTransactionsIdConfirm',
+                ['spaceId' => $spaceId, 'transactionId' => $transactionId],
+                'Unable to confirm the transaction.',
             );
         }
     }
@@ -181,10 +183,12 @@ class TransactionGateway implements TransactionGatewayInterface
                 'spaceId' => $context->spaceId,
                 'exception' => $e,
             ]);
-            throw new TransactionException(
-                "Unable to create transaction: {$e->getMessage()}",
-                new LocalizedString('Unable to create transaction.'),
+            throw SdkProvider::wrapException(
                 $e,
+                TransactionException::class,
+                'postPaymentTransactions',
+                ['spaceId' => $context->spaceId],
+                'Unable to create transaction.',
             );
         }
     }
@@ -197,7 +201,7 @@ class TransactionGateway implements TransactionGatewayInterface
         } catch (\Throwable $e) {
             if ($e instanceof ApiException && $e->getCode() === 404) {
                 $this->logger->debug(
-                    'Gateway: Transaction {transactionId} not found in Space {spaceId}.',
+                    'Gateway: Transaction not found.',
                     [
                         'spaceId' => $spaceId,
                         'transactionId' => $transactionId,
@@ -207,7 +211,7 @@ class TransactionGateway implements TransactionGatewayInterface
             }
 
             $this->logger->error(
-                'Gateway: Failed to find transaction: {errorMessage}',
+                'Gateway: Failed to find transaction.',
                 [
                     'errorMessage' => $e->getMessage(),
                     'exception' => $e,
@@ -215,10 +219,12 @@ class TransactionGateway implements TransactionGatewayInterface
                     'transactionId' => $transactionId,
                 ],
             );
-            throw new TransactionException(
-                "Failed to find transaction {$transactionId}: " . $e->getMessage(),
-                new LocalizedString('Unable to read transaction.'),
+            throw SdkProvider::wrapException(
                 $e,
+                TransactionException::class,
+                'getPaymentTransactionsId',
+                ['spaceId' => $spaceId, 'transactionId' => $transactionId],
+                'Unable to read transaction.',
             );
         }
     }
@@ -247,10 +253,12 @@ class TransactionGateway implements TransactionGatewayInterface
                 'spaceId' => $spaceId,
                 'exception' => $e,
             ]);
-            throw new TransactionException(
-                "Unable to read transaction {$transactionId} in space {$spaceId}: {$e->getMessage()}",
-                new LocalizedString('Unable to read transaction.'),
+            throw SdkProvider::wrapException(
                 $e,
+                TransactionException::class,
+                'getPaymentTransactionsId',
+                ['spaceId' => $spaceId, 'transactionId' => $transactionId],
+                'Unable to read transaction.',
             );
         }
     }
@@ -275,10 +283,12 @@ class TransactionGateway implements TransactionGatewayInterface
                 'transactionId' => $transactionId,
                 'spaceId' => $spaceId,
             ]);
-            throw new TransactionException(
-                "Unable to fetch payment methods for transaction {$transactionId}: " . $e->getMessage(),
-                new LocalizedString('Unable to fetch the available payment methods.'),
+            throw SdkProvider::wrapException(
                 $e,
+                TransactionException::class,
+                'getPaymentTransactionsIdPaymentMethodConfigurations',
+                ['spaceId' => $spaceId, 'transactionId' => $transactionId],
+                'Unable to fetch the available payment methods.',
             );
         }
     }
@@ -302,10 +312,12 @@ class TransactionGateway implements TransactionGatewayInterface
                 'spaceId' => $spaceId,
                 'exception' => $e,
             ]);
-            throw new TransactionException(
-                "Gateway: Failed to fetch payment method configurations: " . $e->getMessage(),
-                new LocalizedString('Failed to fetch payment method configurations.'),
+            throw SdkProvider::wrapException(
                 $e,
+                TransactionException::class,
+                'getPaymentMethodConfigurationsSearch',
+                ['spaceId' => $spaceId],
+                'Failed to fetch payment method configurations.',
             );
         }
     }
@@ -338,10 +350,12 @@ class TransactionGateway implements TransactionGatewayInterface
                 'transactionId' => $transactionId,
                 'spaceId' => $spaceId,
             ]);
-            throw new TransactionException(
-                "Unable to fetch payment URL for transaction {$transactionId}: " . $e->getMessage(),
-                new LocalizedString('Unable to fetch the payment URL.'),
+            throw SdkProvider::wrapException(
                 $e,
+                TransactionException::class,
+                'paymentPageUrl',
+                ['spaceId' => $spaceId, 'transactionId' => $transactionId],
+                'Unable to fetch the payment URL.',
             );
         }
     }
@@ -529,10 +543,12 @@ class TransactionGateway implements TransactionGatewayInterface
                 'spaceId' => $spaceId,
                 'exception' => $e,
             ]);
-            throw new TransactionException(
-                "Unable to search transactions: {$e->getMessage()}",
-                new LocalizedString('Unable to search transactions.'),
+            throw SdkProvider::wrapException(
                 $e,
+                TransactionException::class,
+                'getPaymentTransactionsSearch',
+                ['spaceId' => $spaceId],
+                'Unable to search transactions.',
             );
         }
     }
@@ -580,16 +596,18 @@ class TransactionGateway implements TransactionGatewayInterface
                 'spaceId' => $context->spaceId,
                 'exception' => $e,
             ]);
-            $exception = new TransactionException(
-                "Unable to update transaction {$transactionId} in space {$context->spaceId}: {$e->getMessage()}",
-                new LocalizedString('Unable to update transaction.'),
+            $exception = SdkProvider::wrapException(
                 $e,
+                TransactionException::class,
+                'patchPaymentTransactionsId',
+                ['spaceId' => $context->spaceId, 'transactionId' => $transactionId],
+                'Unable to update transaction.',
             );
 
             // HTTP 409 means another process updated the transaction concurrently (a version
-            // conflict); re-reading and retrying is expected to succeed. Code 0 means no HTTP
-            // response was ever received (a connection failure), which is also transient.
-            if ($e instanceof ApiException && in_array($e->getCode(), [0, 409], true)) {
+            // conflict); re-reading and retrying is expected to succeed. Connection failures
+            // are classified centrally in SdkProvider::wrapException().
+            if ($e instanceof ApiException && $e->getCode() === 409) {
                 $exception->withRetryable(true);
             }
 

@@ -1,6 +1,6 @@
 # Common Example Helpers
 
-This directory contains shared helper classes and a bootstrap script used by the example integrations in `docs/`.
+This directory contains shared helper classes and a bootstrap script used by every runnable example under `docs/examples/`.
 
 ## Purpose
 
@@ -25,7 +25,7 @@ These files centralize common setup logic, such as:
 Example scripts should include `bootstrap.php` to get started quickly:
 
 ```php
-$common = require __DIR__ . '/../../examples/Common/bootstrap.php';
+$common = require __DIR__ . '/../Common/bootstrap.php';
 
 $spaceId = $common['spaceId'];
 $client = $common['sdkProvider'];

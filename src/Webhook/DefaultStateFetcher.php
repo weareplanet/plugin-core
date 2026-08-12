@@ -111,7 +111,7 @@ class DefaultStateFetcher implements StateFetcherInterface
     }
 
     /**
-     * Helper to dynamically fetch the remote state from the Portal API.
+     * Helper to dynamically fetch the remote state from the WeArePlanet Portal API.
      *
      * @param class-string<object> $serviceClass The SDK service class name.
      * @param int $entityId The ID of the entity.

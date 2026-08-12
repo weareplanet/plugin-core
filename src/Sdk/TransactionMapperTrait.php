@@ -13,7 +13,12 @@ use WeArePlanet\PluginCore\Token\State as TokenState;
 use WeArePlanet\PluginCore\Token\Token;
 use WeArePlanet\PluginCore\Transaction\State as StateEnum;
 use WeArePlanet\PluginCore\Transaction\Transaction;
+use WeArePlanet\PluginCore\Transaction\TransactionEnvironment;
+use WeArePlanet\PluginCore\Transaction\TransactionPaymentMethod;
 use WeArePlanet\Sdk\Model\Address as SdkAddress;
+use WeArePlanet\Sdk\Model\PaymentConnector as SdkPaymentConnector;
+use WeArePlanet\Sdk\Model\PaymentConnectorConfiguration as SdkPaymentConnectorConfiguration;
+use WeArePlanet\Sdk\Model\PaymentMethodConfiguration as SdkPaymentMethodConfiguration;
 use WeArePlanet\Sdk\Model\Token as SdkToken;
 use WeArePlanet\Sdk\Model\Transaction as SdkTransaction;
 
@@ -31,6 +36,44 @@ trait TransactionMapperTrait
     use FailureReasonMapperTrait;
     use LineItemMapperTrait;
     use TokenMapperTrait;
+
+    /**
+     * Maps an SDK payment connector configuration to the immutable payment method
+     * snapshot held by a transaction.
+     *
+     * @param SdkPaymentConnectorConfiguration $connectorConfiguration The SDK payment
+     *        connector configuration embedded in the transaction.
+     * @return TransactionPaymentMethod The snapshot of the values in effect for the
+     *         transaction; individual properties are null where the API omitted them.
+     */
+    protected function mapToTransactionPaymentMethod(
+        SdkPaymentConnectorConfiguration $connectorConfiguration,
+    ): TransactionPaymentMethod {
+        $paymentMethodId = null;
+        $resolvedImageUrl = null;
+        $connectorId = null;
+
+        // The SDK declares the embedded payment method configuration as always present,
+        // but the API omits it while no payment method has been resolved yet.
+        $configuration = $connectorConfiguration->getPaymentMethodConfiguration();
+        if ($configuration instanceof SdkPaymentMethodConfiguration) {
+            $paymentMethodId = $configuration->getId();
+            $resolvedImageUrl = $configuration->getResolvedImageUrl();
+        }
+
+        // Unlike WebServiceAPIV1, this SDK version models the connector as an object
+        // rather than a bare ID.
+        $connector = $connectorConfiguration->getConnector();
+        if ($connector instanceof SdkPaymentConnector) {
+            $connectorId = $connector->getId();
+        }
+
+        return new TransactionPaymentMethod(
+            paymentMethodId: $paymentMethodId,
+            connectorId: $connectorId,
+            resolvedImageUrl: $resolvedImageUrl,
+        );
+    }
 
     /**
      * Maps an SDK Transaction to a domain Transaction.
@@ -94,6 +137,18 @@ trait TransactionMapperTrait
 
         if ($sdkTransaction->getShippingAddress()) {
             $domain->shippingAddress = $this->mapToAddress($sdkTransaction->getShippingAddress());
+        }
+
+        // Snapshot of the context this transaction ran in, captured as-is so a stored
+        // transaction keeps reporting what was used rather than what is configured now.
+        $domain->environment = new TransactionEnvironment(
+            spaceViewId: $sdkTransaction->getSpaceViewId(),
+            language: $sdkTransaction->getLanguage(),
+        );
+
+        $connectorConfiguration = $sdkTransaction->getPaymentConnectorConfiguration();
+        if ($connectorConfiguration !== null) {
+            $domain->paymentMethod = $this->mapToTransactionPaymentMethod($connectorConfiguration);
         }
 
         return $domain;

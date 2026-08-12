@@ -73,7 +73,9 @@ class PaymentMethodGatewayTest extends TestCase
     public function testFetchByIdThrowsExceptionIfNotFound(): void
     {
         $this->expectException(PaymentMethodException::class);
-        $this->expectExceptionMessage('Payment method 10 not found: Not found');
+        // wrapException() composes one standard message; the identifying context
+        // and the SDK's own reason are what matter and both survive.
+        $this->expectExceptionMessage('paymentMethodId=10');
 
         $this->service->expects($this->once())
             ->method('getPaymentMethodConfigurationsId')

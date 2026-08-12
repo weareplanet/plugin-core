@@ -22,7 +22,7 @@ class RefundContext
      * @param RefundLineItemCollection $lineItems Optional list of line item reductions.
      *                         NOTE: {@see RefundLineItem::$unitPriceReduction} is the Unit Price Reduction per
      *                         remaining item, NOT the total reduction amount.
-     *                         See docs/Refund/README.md for calculation formula.
+     *                         See docs/3-Post-Payment/Refund.md for calculation formula.
      */
     public function __construct(
         public readonly int $transactionId,

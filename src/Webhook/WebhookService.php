@@ -25,12 +25,10 @@ class WebhookService
      * WebhookService constructor.
      *
      * @param WebhookManagementGatewayInterface $managementGateway
-     * @param WebhookSignatureGatewayInterface $signatureGateway
      * @param LoggerInterface $logger
      */
     public function __construct(
         private readonly WebhookManagementGatewayInterface $managementGateway,
-        private readonly WebhookSignatureGatewayInterface $signatureGateway,
         LoggerInterface $logger,
     ) {
         $this->initializeLogger($logger);
@@ -279,7 +277,7 @@ class WebhookService
      * is deleted and recreated to pick up state list changes.
      *
      * @param int $spaceId
-     * @param string $url The endpoint URL the portal should call.
+     * @param string $url The endpoint URL the WeArePlanet Portal should call.
      * @param string $namePrefix Prefix used for both the URL name and listener names (e.g. 'Magento 2').
      * @param WebhookListenerRegistry $registry The registry holding configured entities and states.
      * @param bool $force When true, recreates listeners that already exist.
@@ -434,25 +432,5 @@ class WebhookService
         $this->logger->debug("Webhook URL updated successfully.");
 
         return $updatedUrl;
-    }
-
-    /**
-     * Validates the incoming webhook payload.
-     *
-     * @param string $signature
-     * @param string $payload
-     * @return bool
-     */
-    public function validatePayload(
-        string $signature,
-        string $payload,
-    ): bool {
-        $isValid = $this->signatureGateway->validate($signature, $payload);
-
-        if (!$isValid) {
-            $this->logger->warning("Webhook signature validation failed.");
-        }
-
-        return $isValid;
     }
 }

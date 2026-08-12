@@ -186,7 +186,7 @@ class TransactionService
                 [
                     'transactionId' => $transactionId,
                     'spaceId' => $spaceId,
-                    'error' => $e->getMessage(),
+                    'reason' => $e->getMessage(),
                 ],
             );
         }
@@ -350,7 +350,9 @@ class TransactionService
                 $this->logger->notice("Update failed; falling back to CREATE.", [
                     'transactionId' => $context->transactionId,
                     'spaceId' => $context->spaceId,
-                    'exception' => $e,
+                    // Expected, self-healing path: the fallback below recovers from it,
+                    // so the reason is enough and a raw Throwable would misrepresent it.
+                    'reason' => $e->getMessage(),
                 ]);
                 $context->transactionId = null;
                 $result = $this->createTransaction($context);

@@ -21,6 +21,8 @@ use WeArePlanet\PluginCore\SharedKernel\Url;
 use WeArePlanet\PluginCore\Transaction\Transaction;
 use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
 use WeArePlanet\PluginCore\Transaction\TransactionContext;
+use WeArePlanet\PluginCore\Transaction\TransactionEnvironment;
+use WeArePlanet\PluginCore\Transaction\TransactionPaymentMethod;
 use WeArePlanet\PluginCore\Transaction\TransactionSearchCriteria;
 use WeArePlanet\Sdk\ApiException;
 use WeArePlanet\Sdk\Model\CreationEntityState as SdkCreationEntityState;
@@ -28,6 +30,8 @@ use WeArePlanet\Sdk\Model\FailureReason as SdkFailureReason;
 use WeArePlanet\Sdk\Model\LineItem as SdkLineItemResponse;
 use WeArePlanet\Sdk\Model\LineItemCreate as SdkLineItemCreate;
 use WeArePlanet\Sdk\Model\LineItemType as SdkLineItemType;
+use WeArePlanet\Sdk\Model\PaymentConnector as SdkPaymentConnector;
+use WeArePlanet\Sdk\Model\PaymentConnectorConfiguration as SdkPaymentConnectorConfiguration;
 use WeArePlanet\Sdk\Model\PaymentMethodConfiguration as SdkPaymentMethodConfiguration;
 use WeArePlanet\Sdk\Model\PaymentMethodConfigurationListResponse;
 use WeArePlanet\Sdk\Model\Transaction as SdkTransaction;
@@ -341,6 +345,126 @@ class TransactionGatewayTest extends TestCase
     }
 
     /**
+     * Verifies that the environment and payment method snapshots are populated
+     * from the SDK payload when it carries the full context.
+     */
+    public function testFindMapsEnvironmentAndPaymentMethodSnapshots(): void
+    {
+        $spaceId = 123;
+        $transactionId = 456;
+
+        $sdkPaymentMethodConfiguration = new SdkPaymentMethodConfiguration();
+        $sdkPaymentMethodConfiguration->setId(88);
+        $sdkPaymentMethodConfiguration->setResolvedImageUrl('https://gateway.test/s/1/resource/payment/visa.svg');
+
+        // Unlike WebServiceAPIV1, this SDK version models the connector as an object.
+        $sdkConnector = new SdkPaymentConnector();
+        $sdkConnector->setId(31);
+
+        $sdkConnectorConfiguration = new SdkPaymentConnectorConfiguration();
+        $sdkConnectorConfiguration->setPaymentMethodConfiguration($sdkPaymentMethodConfiguration);
+        $sdkConnectorConfiguration->setConnector($sdkConnector);
+
+        $sdkTransaction = new SdkTransaction();
+        $sdkTransaction->setId($transactionId);
+        $sdkTransaction->setVersion(1);
+        $sdkTransaction->setState(SdkTransactionState::AUTHORIZED);
+        $sdkTransaction->setLinkedSpaceId($spaceId);
+        $sdkTransaction->setSpaceViewId(7);
+        $sdkTransaction->setLanguage('de-CH');
+        $sdkTransaction->setPaymentConnectorConfiguration($sdkConnectorConfiguration);
+
+        $this->sdkTransactionsService->expects($this->once())
+            ->method('getPaymentTransactionsId')
+            ->with($transactionId, $spaceId)
+            ->willReturn($sdkTransaction);
+
+        $transaction = $this->gateway->find($spaceId, $transactionId);
+
+        $this->assertInstanceOf(TransactionEnvironment::class, $transaction->environment);
+        $this->assertSame(7, $transaction->environment->spaceViewId);
+        $this->assertSame('de-CH', $transaction->environment->language);
+
+        $this->assertInstanceOf(TransactionPaymentMethod::class, $transaction->paymentMethod);
+        $this->assertSame(88, $transaction->paymentMethod->paymentMethodId);
+        $this->assertSame(31, $transaction->paymentMethod->connectorId);
+        $this->assertSame(
+            'https://gateway.test/s/1/resource/payment/visa.svg',
+            $transaction->paymentMethod->resolvedImageUrl,
+        );
+    }
+
+    /**
+     * Verifies that a transaction without a payment connector configuration maps
+     * without error, leaving the payment method snapshot null while the
+     * environment snapshot is still built from whatever the payload carries.
+     */
+    public function testFindLeavesPaymentMethodNullWhenConnectorConfigurationIsMissing(): void
+    {
+        $spaceId = 123;
+        $transactionId = 456;
+
+        $sdkTransaction = new SdkTransaction();
+        $sdkTransaction->setId($transactionId);
+        $sdkTransaction->setVersion(1);
+        $sdkTransaction->setState(SdkTransactionState::PENDING);
+        $sdkTransaction->setLinkedSpaceId($spaceId);
+
+        $this->sdkTransactionsService->expects($this->once())
+            ->method('getPaymentTransactionsId')
+            ->with($transactionId, $spaceId)
+            ->willReturn($sdkTransaction);
+
+        $transaction = $this->gateway->find($spaceId, $transactionId);
+
+        $this->assertNull($transaction->paymentMethod);
+
+        $this->assertInstanceOf(TransactionEnvironment::class, $transaction->environment);
+        $this->assertNull($transaction->environment->spaceViewId);
+        $this->assertNull($transaction->environment->language);
+    }
+
+    /**
+     * Verifies that a payment connector configuration without an embedded payment
+     * method configuration still yields a snapshot, with the unavailable fields null.
+     */
+    public function testFindMapsPartialPaymentConnectorConfiguration(): void
+    {
+        $spaceId = 123;
+        $transactionId = 456;
+
+        $sdkConnector = new SdkPaymentConnector();
+        $sdkConnector->setId(31);
+
+        $sdkConnectorConfiguration = new SdkPaymentConnectorConfiguration();
+        $sdkConnectorConfiguration->setConnector($sdkConnector);
+
+        $sdkTransaction = new SdkTransaction();
+        $sdkTransaction->setId($transactionId);
+        $sdkTransaction->setVersion(1);
+        $sdkTransaction->setState(SdkTransactionState::AUTHORIZED);
+        $sdkTransaction->setLinkedSpaceId($spaceId);
+        $sdkTransaction->setLanguage('en-US');
+        $sdkTransaction->setPaymentConnectorConfiguration($sdkConnectorConfiguration);
+
+        $this->sdkTransactionsService->expects($this->once())
+            ->method('getPaymentTransactionsId')
+            ->with($transactionId, $spaceId)
+            ->willReturn($sdkTransaction);
+
+        $transaction = $this->gateway->find($spaceId, $transactionId);
+
+        $this->assertInstanceOf(TransactionPaymentMethod::class, $transaction->paymentMethod);
+        $this->assertSame(31, $transaction->paymentMethod->connectorId);
+        $this->assertNull($transaction->paymentMethod->paymentMethodId);
+        $this->assertNull($transaction->paymentMethod->resolvedImageUrl);
+
+        $this->assertInstanceOf(TransactionEnvironment::class, $transaction->environment);
+        $this->assertNull($transaction->environment->spaceViewId);
+        $this->assertSame('en-US', $transaction->environment->language);
+    }
+
+    /**
      * Verifies that a line item's discountIncludingTax is mapped back onto
      * the domain LineItem when reading a transaction.
      */
@@ -404,9 +528,18 @@ class TransactionGatewayTest extends TestCase
             ->with($transactionId, $spaceId)
             ->willThrowException(new ApiException('Not Found', 404));
 
+        // The IDs live in the context now, not in the message text.
         $this->logger->expects($this->once())
             ->method('debug')
-            ->with($this->stringContains('not found in Space'));
+            ->with(
+                $this->stringContains('Transaction not found'),
+                $this->callback(function (array $context) use ($spaceId, $transactionId): bool {
+                    $this->assertSame($spaceId, $context['spaceId']);
+                    $this->assertSame($transactionId, $context['transactionId']);
+
+                    return true;
+                }),
+            );
 
         $result = $this->gateway->find($spaceId, $transactionId);
         $this->assertNull($result);

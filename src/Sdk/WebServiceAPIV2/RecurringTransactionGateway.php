@@ -92,10 +92,12 @@ class RecurringTransactionGateway implements RecurringTransactionGatewayInterfac
                 'spaceId' => $spaceId,
                 'exception' => $e,
             ]);
-            throw new TransactionException(
-                "Failed to process recurring payment for transaction $transactionId: " . $e->getMessage(),
-                new LocalizedString('The recurring payment could not be processed.'),
+            throw SdkProvider::wrapException(
                 $e,
+                TransactionException::class,
+                'processWithoutUserInteraction',
+                ['spaceId' => $spaceId, 'transactionId' => $transactionId],
+                'The recurring payment could not be processed.',
             );
         }
     }

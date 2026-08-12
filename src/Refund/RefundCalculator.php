@@ -28,7 +28,7 @@ final class RefundCalculator
      * Always read the per-unit price from {@see LineItem::$unitPriceIncludingTax}
      * — never derive it by dividing `amountIncludingTax` by `quantity`,
      * which introduces floating-point rounding errors that cause the
-     * gateway API to reject the refund. See docs/Refund/README.md for the
+     * gateway API to reject the refund. See docs/3-Post-Payment/Refund.md for the
      * full explanation.
      *
      * @param LineItem $originalItem The original (pre-refund) line item being reduced.

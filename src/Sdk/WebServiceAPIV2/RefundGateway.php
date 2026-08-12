@@ -19,7 +19,6 @@ use WeArePlanet\PluginCore\Sdk\DateTimeMapperTrait;
 use WeArePlanet\PluginCore\Sdk\FailureReasonMapperTrait;
 use WeArePlanet\PluginCore\Sdk\LineItemMapperTrait;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
-use WeArePlanet\Sdk\ApiException;
 use WeArePlanet\Sdk\Model\LineItemReductionCreate as SdkLineItemReductionCreate;
 use WeArePlanet\Sdk\Model\Refund as SdkRefund;
 use WeArePlanet\Sdk\Model\RefundCreate as SdkRefundCreate;
@@ -61,7 +60,7 @@ class RefundGateway implements RefundGatewayInterface
             return new RefundCollection(...$refunds);
         } catch (\Throwable $e) {
             $this->logger->error(
-                'Failed to find refunds for transaction: {errorMessage}',
+                'Failed to find refunds for transaction.',
                 [
                     'errorMessage' => $e->getMessage(),
                     'exception' => $e,
@@ -69,10 +68,12 @@ class RefundGateway implements RefundGatewayInterface
                     'transactionId' => $transactionId,
                 ],
             );
-            throw new RefundException(
-                "Failed to find refunds for transaction {$transactionId}: " . $e->getMessage(),
-                new LocalizedString('An error occurred while retrieving refunds.'),
+            throw SdkProvider::wrapException(
                 $e,
+                RefundException::class,
+                'getPaymentRefundsSearch',
+                ['spaceId' => $spaceId, 'transactionId' => $transactionId],
+                'An error occurred while retrieving refunds.',
             );
         }
     }
@@ -142,17 +143,14 @@ class RefundGateway implements RefundGatewayInterface
                 'spaceId' => $spaceId,
                 'exception' => $e,
             ]);
-            $exception = new RefundException(
-                "Unable to process refund: {$e->getMessage()}",
-                new LocalizedString('An error occurred while processing the refund.'),
+            $exception = SdkProvider::wrapException(
                 $e,
+                RefundException::class,
+                'postPaymentRefunds',
+                ['spaceId' => $spaceId, 'transactionId' => $context->transactionId],
+                'An error occurred while processing the refund.',
             );
 
-            // Code 0 means no HTTP response was ever received (a connection failure), which is
-            // transient; retrying the same refund request is expected to succeed.
-            if ($e instanceof ApiException && $e->getCode() === 0) {
-                $exception->withRetryable(true);
-            }
 
             throw $exception;
         }
@@ -170,7 +168,7 @@ class RefundGateway implements RefundGatewayInterface
             return $this->mapToRefund($sdkRefund, (int)$sdkRefund->getTransaction()?->getId());
         } catch (\Throwable $e) {
             $this->logger->error(
-                'Failed to read refund: {errorMessage}',
+                'Failed to read refund.',
                 [
                     'errorMessage' => $e->getMessage(),
                     'exception' => $e,
@@ -178,10 +176,12 @@ class RefundGateway implements RefundGatewayInterface
                     'spaceId' => $spaceId,
                 ],
             );
-            throw new RefundException(
-                "Failed to read refund {$refundId}: " . $e->getMessage(),
-                new LocalizedString('An error occurred while retrieving the refund.'),
+            throw SdkProvider::wrapException(
                 $e,
+                RefundException::class,
+                'getPaymentRefundsId',
+                ['spaceId' => $spaceId, 'refundId' => $refundId],
+                'An error occurred while retrieving the refund.',
             );
         }
     }

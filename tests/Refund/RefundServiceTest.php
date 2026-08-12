@@ -10,6 +10,7 @@ use WeArePlanet\PluginCore\LineItem\LineItem;
 use WeArePlanet\PluginCore\LineItem\LineItemCollection;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Refund\Exception\InvalidRefundException;
+use WeArePlanet\PluginCore\Refund\Exception\RefundException;
 use WeArePlanet\PluginCore\Refund\LineItem\RefundLineItem;
 use WeArePlanet\PluginCore\Refund\LineItem\RefundLineItemCollection;
 use WeArePlanet\PluginCore\Refund\Refund;
@@ -416,4 +417,29 @@ class RefundServiceTest extends TestCase
 
         $this->service->createRefund($spaceId, $context);
     }
+
+    public function testFindByIdDelegatesToGatewayAndReturnsRefund(): void
+    {
+        $refund = new Refund();
+        $refund->id = 555;
+        $refund->transactionId = 123;
+
+        $this->gateway->expects($this->once())
+            ->method('findById')
+            ->with(1, 555)
+            ->willReturn($refund);
+
+        $this->assertSame($refund, $this->service->findById(1, 555));
+    }
+
+    public function testFindByIdPropagatesGatewayException(): void
+    {
+        $this->gateway->method('findById')
+            ->willThrowException(new RefundException('boom'));
+
+        $this->expectException(RefundException::class);
+
+        $this->service->findById(1, 555);
+    }
+
 }

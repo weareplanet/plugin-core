@@ -5,6 +5,8 @@ namespace WeArePlanet\PluginCore\Examples\Common;
 use WeArePlanet\PluginCore\Settings\DefaultSettingsProvider;
 use WeArePlanet\PluginCore\Settings\IntegrationMode;
 
+// 📖 Concept documentation: See docs/examples/Common/README.md
+
 class EnvSettingsProvider extends DefaultSettingsProvider
 {
     // We ONLY implement the required credentials

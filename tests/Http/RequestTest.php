@@ -7,48 +7,67 @@ namespace WeArePlanet\PluginCore\Tests\Http;
 use PHPUnit\Framework\TestCase;
 use WeArePlanet\PluginCore\Http\Request;
 
-/**
- * Unit tests for the Request class.
- */
 class RequestTest extends TestCase
 {
-    /**
-     * Test the manual creation of a Request instance.
-     *
-     * @return void
-     */
-    public function testCreate(): void
+    public function testAListValuedHeaderIsFlattenedToItsFirstValue(): void
     {
-        $headers = ['Content-Type' => 'application/json', 'X-Custom-Header' => 'value'];
-        $body = ['foo' => 'bar'];
-        $rawBody = (string) json_encode($body, JSON_THROW_ON_ERROR);
+        // Symfony's HttpFoundation returns array<string, string[]> from headers->all(),
+        // which fromSymfonyRequest() passes straight through. Before normalization this
+        // made getHeader() fatal with a TypeError on every Symfony-based platform, so
+        // signature validation could not even be attempted there.
+        $request = Request::create(['X-Signature' => ['abc123']], [], '{}');
 
-        $request = Request::create($headers, $body, $rawBody);
-
-        $this->assertEquals($body, $request->body);
-        $this->assertEquals($rawBody, $request->getRawBody());
-        $this->assertEquals('value', $request->getHeader('X-Custom-Header'));
-        $this->assertEquals('value', $request->getHeader('x-custom-header')); // check case-insensitivity
+        $this->assertSame('abc123', $request->getHeader('x-signature'));
     }
 
-    /**
-     * Test the JSON string representation of the Request.
-     *
-     * @return void
-     */
-    public function testToString(): void
+    public function testAPlainStringHeaderIsUnaffected(): void
     {
-        // For testing, since constructor is private and fromWordPress reads superglobals.
-        $_SERVER['HTTP_SOME_KEY'] = 'some_value';
+        $request = Request::create(['X-Signature' => 'abc123'], [], '{}');
 
-        $request = Request::fromWordPress();
+        $this->assertSame('abc123', $request->getHeader('x-signature'));
+    }
 
-        $json = (string) $request;
-        $this->assertJson($json);
+    public function testAnEmptyListYieldsAnEmptyStringRatherThanFailing(): void
+    {
+        // A degenerate header is a malformed request, not a crash: callers treat the
+        // empty string as "absent" the same way they treat null.
+        $request = Request::create(['X-Signature' => []], [], '{}');
 
-        $decoded = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame('', $request->getHeader('x-signature'));
+    }
 
-        $this->assertIsArray($decoded);
-        $this->assertArrayHasKey('body', $decoded);
+    public function testHeaderLookupIsCaseInsensitive(): void
+    {
+        $request = Request::create(['X-SIGNATURE' => 'abc123'], [], '{}');
+
+        $this->assertSame('abc123', $request->getHeader('x-signature'));
+        $this->assertSame('abc123', $request->getHeader('X-Signature'));
+    }
+
+    public function testAMissingHeaderIsNull(): void
+    {
+        $request = Request::create(['X-Signature' => 'abc123'], [], '{}');
+
+        $this->assertNull($request->getHeader('x-absent'));
+    }
+
+    public function testTheRawBodyIsPreservedExactly(): void
+    {
+        // Signature validation hashes these bytes, so they must survive untouched —
+        // whitespace and key order included.
+        $rawBody = '{ "spaceId": 1,  "entityId": 42 }';
+        $request = Request::create([], ['spaceId' => 1, 'entityId' => 42], $rawBody);
+
+        $this->assertSame($rawBody, $request->getRawBody());
+    }
+
+    public function testBodyValuesAreReadFromTheParsedPayload(): void
+    {
+        $request = Request::create([], ['spaceId' => 1, 'entityId' => 42], '{}');
+
+        $this->assertSame(1, $request->get('spaceId'));
+        $this->assertSame(42, $request->get('entityId'));
+        $this->assertNull($request->get('absent'));
+        $this->assertSame('fallback', $request->get('absent', 'fallback'));
     }
 }

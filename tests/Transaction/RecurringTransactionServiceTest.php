@@ -13,6 +13,7 @@ use WeArePlanet\PluginCore\Transaction\Transaction;
 use WeArePlanet\PluginCore\Transaction\TransactionContext;
 use WeArePlanet\PluginCore\Transaction\TransactionService;
 use WeArePlanet\PluginCore\Token\Exception\MissingTokenException;
+use WeArePlanet\PluginCore\Token\State as TokenState;
 use WeArePlanet\PluginCore\Token\Token;
 use WeArePlanet\PluginCore\Address\Address;
 
@@ -48,8 +49,7 @@ class RecurringTransactionServiceTest extends TestCase
         $originalTransaction->customerId = 'CUST-001';
         $originalTransaction->currency = 'USD';
 
-        $token = new Token();
-        $token->id = 555;
+        $token = new Token(id: 555, state: TokenState::ACTIVE);
         $originalTransaction->token = $token;
 
         $address = new Address();

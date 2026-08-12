@@ -27,11 +27,11 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
     use PaymentMethodMapperTrait;
 
     /**
-     * @param SdkProvider $provider The SDK provider.
+     * @param SdkProvider $sdkProvider The SDK provider.
      * @param LoggerInterface $logger The logger instance.
      */
     public function __construct(
-        private readonly SdkProvider $provider,
+        private readonly SdkProvider $sdkProvider,
         LoggerInterface $logger,
     ) {
         $this->initializeLogger($logger);
@@ -44,7 +44,7 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
     {
         try {
             /** @var SdkPaymentMethodConfigurationService $service */
-            $service = $this->provider->getService(SdkPaymentMethodConfigurationService::class);
+            $service = $this->sdkProvider->getService(SdkPaymentMethodConfigurationService::class);
 
             // V2: getPaymentMethodConfigurationsId($id, $space)
             $config = $service->getPaymentMethodConfigurationsId($id, $spaceId);
@@ -56,10 +56,12 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
                 'spaceId' => $spaceId,
                 'exception' => $e,
             ]);
-            throw new PaymentMethodException(
-                "Payment method {$id} not found: {$e->getMessage()}",
-                new LocalizedString('Payment method not found.'),
+            throw SdkProvider::wrapException(
                 $e,
+                PaymentMethodException::class,
+                'read',
+                ['spaceId' => $spaceId, 'paymentMethodId' => $id],
+                'Payment method not found.',
             );
         }
     }
@@ -71,7 +73,7 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
     {
         try {
             /** @var SdkPaymentMethodConfigurationService $service */
-            $service = $this->provider->getService(SdkPaymentMethodConfigurationService::class);
+            $service = $this->sdkProvider->getService(SdkPaymentMethodConfigurationService::class);
 
             // V2 Search: query string
             $query = null;
@@ -95,10 +97,12 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
                 'spaceId' => $spaceId,
                 'exception' => $e,
             ]);
-            throw new PaymentMethodException(
-                "Unable to fetch payment methods: {$e->getMessage()}",
-                new LocalizedString('Unable to fetch payment methods.'),
+            throw SdkProvider::wrapException(
                 $e,
+                PaymentMethodException::class,
+                'search',
+                ['spaceId' => $spaceId],
+                'Unable to fetch payment methods.',
             );
         }
     }
