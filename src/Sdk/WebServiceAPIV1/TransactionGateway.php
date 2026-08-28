@@ -151,6 +151,15 @@ class TransactionGateway implements TransactionGatewayInterface
         $sdkTransactionCreate->setCustomerEmailAddress($context->personalDetails?->emailAddress);
         $sdkTransactionCreate->setCustomerId($context->customerId);
         $sdkTransactionCreate->setMerchantReference($context->merchantReference);
+        if ($context->invoiceMerchantReference !== null) {
+            $sdkTransactionCreate->setInvoiceMerchantReference($context->invoiceMerchantReference);
+        }
+        if (!empty($context->metaData)) {
+            $sdkTransactionCreate->setMetaData($context->metaData);
+        }
+        if (!empty($context->allowedPaymentMethodConfigurations)) {
+            $sdkTransactionCreate->setAllowedPaymentMethodConfigurations($context->allowedPaymentMethodConfigurations);
+        }
 
         if ($context->successUrl !== null) {
             $sdkTransactionCreate->setSuccessUrl($context->successUrl->value);
@@ -620,6 +629,15 @@ class TransactionGateway implements TransactionGatewayInterface
         $sdkTransactionPending->setCustomerEmailAddress($context->personalDetails?->emailAddress);
         $sdkTransactionPending->setCustomerId($context->customerId);
         $sdkTransactionPending->setMerchantReference($context->merchantReference);
+        if ($context->invoiceMerchantReference !== null) {
+            $sdkTransactionPending->setInvoiceMerchantReference($context->invoiceMerchantReference);
+        }
+        if (!empty($context->metaData)) {
+            $sdkTransactionPending->setMetaData($context->metaData);
+        }
+        if (!empty($context->allowedPaymentMethodConfigurations)) {
+            $sdkTransactionPending->setAllowedPaymentMethodConfigurations($context->allowedPaymentMethodConfigurations);
+        }
         if ($context->successUrl !== null) {
             $sdkTransactionPending->setSuccessUrl($context->successUrl->value);
         }

@@ -167,7 +167,11 @@ class RefundGateway implements RefundGatewayInterface
             $sdkRefundCreate->setTransaction($context->transactionId);
             $sdkRefundCreate->setAmount($context->amount);
             $sdkRefundCreate->setMerchantReference($context->merchantReference);
-            $sdkRefundCreate->setExternalId(uniqid((string)$context->transactionId . '-', true));
+            // Use the caller-supplied idempotency key when given, so a retried
+            // refund (e.g. after a timeout) is recognised by the API as the
+            // same refund instead of creating a duplicate. Fall back to a
+            // generated ID only when the caller didn't provide one.
+            $sdkRefundCreate->setExternalId($context->externalId ?? uniqid((string)$context->transactionId . '-', true));
             $sdkRefundCreate->setType(match ($context->type->value) {
                 'MERCHANT_INITIATED_ONLINE' => SdkRefundType::MERCHANT_INITIATED_ONLINE,
                 'MERCHANT_INITIATED_OFFLINE' => SdkRefundType::MERCHANT_INITIATED_OFFLINE,
