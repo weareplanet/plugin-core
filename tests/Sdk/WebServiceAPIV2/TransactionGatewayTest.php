@@ -18,6 +18,7 @@ use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\TransactionGateway;
 use WeArePlanet\PluginCore\Settings\IntegrationMode as IntegrationModeEnum;
 use WeArePlanet\PluginCore\Settings\Settings;
 use WeArePlanet\PluginCore\SharedKernel\Url;
+use WeArePlanet\PluginCore\Transaction\CustomersPresence;
 use WeArePlanet\PluginCore\Transaction\Transaction;
 use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
 use WeArePlanet\PluginCore\Transaction\TransactionContext;
@@ -26,6 +27,7 @@ use WeArePlanet\PluginCore\Transaction\TransactionPaymentMethod;
 use WeArePlanet\PluginCore\Transaction\TransactionSearchCriteria;
 use WeArePlanet\Sdk\ApiException;
 use WeArePlanet\Sdk\Model\CreationEntityState as SdkCreationEntityState;
+use WeArePlanet\Sdk\Model\CustomersPresence as SdkCustomersPresence;
 use WeArePlanet\Sdk\Model\FailureReason as SdkFailureReason;
 use WeArePlanet\Sdk\Model\LineItem as SdkLineItemResponse;
 use WeArePlanet\Sdk\Model\LineItemCreate as SdkLineItemCreate;
@@ -34,6 +36,7 @@ use WeArePlanet\Sdk\Model\PaymentConnector as SdkPaymentConnector;
 use WeArePlanet\Sdk\Model\PaymentConnectorConfiguration as SdkPaymentConnectorConfiguration;
 use WeArePlanet\Sdk\Model\PaymentMethodConfiguration as SdkPaymentMethodConfiguration;
 use WeArePlanet\Sdk\Model\PaymentMethodConfigurationListResponse;
+use WeArePlanet\Sdk\Model\PaymentMethodConfigurationSearchResponse as SdkPaymentMethodConfigurationSearchResponse;
 use WeArePlanet\Sdk\Model\Transaction as SdkTransaction;
 use WeArePlanet\Sdk\Model\TransactionCreate as SdkTransactionCreate;
 use WeArePlanet\Sdk\Model\TransactionState as SdkTransactionState;
@@ -228,6 +231,249 @@ class TransactionGatewayTest extends TestCase
         $this->gateway->create($context);
     }
 
+    /**
+     * Verifies that customersPresence and deviceSessionIdentifier are
+     * forwarded to the SDK transaction when the context provides them.
+     */
+    public function testCreateTransactionMapsCustomersPresenceAndDeviceSessionIdentifierWhenSet(): void
+    {
+        $context = $this->buildMinimalContext();
+        $context->personalDetails = new PersonalDetails(emailAddress: 'test@example.com');
+        $context->customersPresence = CustomersPresence::VIRTUAL_PRESENT;
+        $context->deviceSessionIdentifier = 'device-session-123';
+
+        $sdkTx = new SdkTransaction();
+        $sdkTx->setId(780);
+        $sdkTx->setLinkedSpaceId(123);
+        $sdkTx->setVersion(1);
+        $sdkTx->setState(SdkTransactionState::PENDING);
+
+        $this->sdkTransactionsService->expects($this->once())
+            ->method('postPaymentTransactions')
+            ->with(
+                $this->equalTo(123),
+                $this->callback(function (SdkTransactionCreate $create) {
+                    return $create->getCustomersPresence() === SdkCustomersPresence::VIRTUAL_PRESENT
+                        && $create->getDeviceSessionIdentifier() === 'device-session-123';
+                }),
+            )
+            ->willReturn($sdkTx);
+
+        $this->gateway->create($context);
+    }
+
+    /**
+     * Verifies that customersPresence and deviceSessionIdentifier are omitted
+     * from the SDK transaction when the context leaves them unset, rather than
+     * being sent as explicit nulls.
+     */
+    public function testCreateTransactionOmitsCustomersPresenceAndDeviceSessionIdentifierWhenNull(): void
+    {
+        $context = $this->buildMinimalContext();
+        $context->personalDetails = new PersonalDetails(emailAddress: 'test@example.com');
+
+        $sdkTx = new SdkTransaction();
+        $sdkTx->setId(781);
+        $sdkTx->setLinkedSpaceId(123);
+        $sdkTx->setVersion(1);
+        $sdkTx->setState(SdkTransactionState::PENDING);
+
+        $this->sdkTransactionsService->expects($this->once())
+            ->method('postPaymentTransactions')
+            ->with(
+                $this->equalTo(123),
+                $this->callback(function (SdkTransactionCreate $create) {
+                    return $create->getCustomersPresence() === null
+                        && $create->getDeviceSessionIdentifier() === null;
+                }),
+            )
+            ->willReturn($sdkTx);
+
+        $this->gateway->create($context);
+    }
+
+    /**
+     * A context without personal details must still create a transaction:
+     * customerEmailAddress is optional on the API, and the SDK setter rejects
+     * an explicit null, so the field has to be omitted entirely.
+     */
+    public function testCreateTransactionOmitsCustomerEmailAddressWhenPersonalDetailsMissing(): void
+    {
+        $context = $this->buildMinimalContext();
+        $context->personalDetails = null;
+
+        $sdkTx = new SdkTransaction();
+        $sdkTx->setId(782);
+        $sdkTx->setLinkedSpaceId(123);
+        $sdkTx->setVersion(1);
+        $sdkTx->setState(SdkTransactionState::PENDING);
+
+        $this->sdkTransactionsService->expects($this->once())
+            ->method('postPaymentTransactions')
+            ->with(
+                $this->equalTo(123),
+                $this->callback(
+                    fn (SdkTransactionCreate $create) => $create->getCustomerEmailAddress() === null,
+                ),
+            )
+            ->willReturn($sdkTx);
+
+        $this->gateway->create($context);
+    }
+
+    /**
+     * Personal details present but without an email address must behave the
+     * same as no personal details at all.
+     */
+    public function testCreateTransactionOmitsCustomerEmailAddressWhenEmailMissing(): void
+    {
+        $context = $this->buildMinimalContext();
+        $context->personalDetails = new PersonalDetails(givenName: 'Tim');
+
+        $sdkTx = new SdkTransaction();
+        $sdkTx->setId(783);
+        $sdkTx->setLinkedSpaceId(123);
+        $sdkTx->setVersion(1);
+        $sdkTx->setState(SdkTransactionState::PENDING);
+
+        $this->sdkTransactionsService->expects($this->once())
+            ->method('postPaymentTransactions')
+            ->with(
+                $this->equalTo(123),
+                $this->callback(
+                    fn (SdkTransactionCreate $create) => $create->getCustomerEmailAddress() === null,
+                ),
+            )
+            ->willReturn($sdkTx);
+
+        $this->gateway->create($context);
+    }
+
+    /**
+     * invoiceMerchantReference must reach the SDK transaction when the
+     * context provides it: it was previously settable on TransactionContext
+     * but never forwarded to the API.
+     */
+    public function testCreateTransactionMapsInvoiceMerchantReferenceWhenSet(): void
+    {
+        $context = $this->buildMinimalContext();
+        $context->invoiceMerchantReference = 'INV-001';
+
+        $sdkTx = new SdkTransaction();
+        $sdkTx->setId(789);
+        $sdkTx->setLinkedSpaceId(123);
+        $sdkTx->setVersion(1);
+        $sdkTx->setState(SdkTransactionState::PENDING);
+
+        $this->sdkTransactionsService->expects($this->once())
+            ->method('postPaymentTransactions')
+            ->with(
+                $this->equalTo(123),
+                $this->callback(fn (SdkTransactionCreate $create) => $create->getInvoiceMerchantReference() === 'INV-001'),
+            )
+            ->willReturn($sdkTx);
+
+        $this->gateway->create($context);
+    }
+
+    /**
+     * Without an invoiceMerchantReference, the field must be omitted from
+     * the SDK payload rather than sent as an explicit null.
+     */
+    public function testCreateTransactionOmitsInvoiceMerchantReferenceWhenNull(): void
+    {
+        $context = $this->buildMinimalContext();
+
+        $sdkTx = new SdkTransaction();
+        $sdkTx->setId(790);
+        $sdkTx->setLinkedSpaceId(123);
+        $sdkTx->setVersion(1);
+        $sdkTx->setState(SdkTransactionState::PENDING);
+
+        $this->sdkTransactionsService->expects($this->once())
+            ->method('postPaymentTransactions')
+            ->with(
+                $this->equalTo(123),
+                $this->callback(fn (SdkTransactionCreate $create) => $create->getInvoiceMerchantReference() === null),
+            )
+            ->willReturn($sdkTx);
+
+        $this->gateway->create($context);
+    }
+
+    /**
+     * metaData and allowedPaymentMethodConfigurations must reach the SDK
+     * transaction when the context provides them: both were previously
+     * settable on TransactionContext but never forwarded to the API.
+     */
+    public function testCreateTransactionMapsMetaDataAndAllowedPaymentMethodConfigurationsWhenSet(): void
+    {
+        $context = $this->buildMinimalContext();
+        $context->metaData = ['orderSource' => 'web'];
+        $context->allowedPaymentMethodConfigurations = [111, 222];
+
+        $sdkTx = new SdkTransaction();
+        $sdkTx->setId(784);
+        $sdkTx->setLinkedSpaceId(123);
+        $sdkTx->setVersion(1);
+        $sdkTx->setState(SdkTransactionState::PENDING);
+
+        $this->sdkTransactionsService->expects($this->once())
+            ->method('postPaymentTransactions')
+            ->with(
+                $this->equalTo(123),
+                $this->callback(function (SdkTransactionCreate $create) {
+                    return $create->getMetaData() === ['orderSource' => 'web']
+                        && $create->getAllowedPaymentMethodConfigurations() === [111, 222];
+                }),
+            )
+            ->willReturn($sdkTx);
+
+        $this->gateway->create($context);
+    }
+
+    /**
+     * With no metaData or allowedPaymentMethodConfigurations set, both fields
+     * must be omitted from the SDK payload rather than sent as empty arrays.
+     */
+    public function testCreateTransactionOmitsMetaDataAndAllowedPaymentMethodConfigurationsWhenEmpty(): void
+    {
+        $context = $this->buildMinimalContext();
+
+        $sdkTx = new SdkTransaction();
+        $sdkTx->setId(785);
+        $sdkTx->setLinkedSpaceId(123);
+        $sdkTx->setVersion(1);
+        $sdkTx->setState(SdkTransactionState::PENDING);
+
+        $this->sdkTransactionsService->expects($this->once())
+            ->method('postPaymentTransactions')
+            ->with(
+                $this->equalTo(123),
+                $this->callback(function (SdkTransactionCreate $create) {
+                    return $create->getMetaData() === null
+                        && $create->getAllowedPaymentMethodConfigurations() === null;
+                }),
+            )
+            ->willReturn($sdkTx);
+
+        $this->gateway->create($context);
+    }
+
+    /**
+     * Wraps configurations in the paged response shape the SDK actually returns.
+     *
+     * @param list<SdkPaymentMethodConfiguration> $configs
+     */
+    private function configurationSearchResponse(array $configs, bool $hasMore = false): SdkPaymentMethodConfigurationSearchResponse
+    {
+        $response = new SdkPaymentMethodConfigurationSearchResponse();
+        $response->setData($configs);
+        $response->setHasMore($hasMore);
+
+        return $response;
+    }
+
     public function testFetchAvailablePaymentMethodsUsesSettingsMode(): void
     {
         $spaceId = 123;
@@ -258,6 +504,48 @@ class TransactionGatewayTest extends TestCase
         $this->assertEquals(55, $results->first()->id, );
     }
 
+    /**
+     * A space can hold more active configurations than one page returns, so the
+     * gateway must page until the API reports no more: a truncated list would
+     * silently hide payment methods that are still active.
+     */
+    public function testFetchPaymentMethodConfigurationsPagesUntilTheApiReportsNoMore(): void
+    {
+        $spaceId = 123;
+        $query = "state:ACTIVE";
+
+        $makeConfig = static function (int $id) use ($spaceId): SdkPaymentMethodConfiguration {
+            $config = new SdkPaymentMethodConfiguration();
+            $config->setId($id);
+            $config->setLinkedSpaceId($spaceId);
+            $config->setState(SdkCreationEntityState::ACTIVE);
+            $config->setResolvedTitle(['en-US' => "Method $id"]);
+            $config->setSortOrder(1);
+
+            return $config;
+        };
+
+        $firstPage = $this->configurationSearchResponse([$makeConfig(11)], true);
+        $secondPage = $this->configurationSearchResponse([$makeConfig(12)], false);
+
+        $this->sdkPaymentConfigService->expects($this->exactly(2))
+            ->method('getPaymentMethodConfigurationsSearch')
+            ->willReturnCallback(
+                function (int $space, $expand, int $limit, int $offset, $order, string $actualQuery) use ($spaceId, $query, $firstPage, $secondPage) {
+                    self::assertSame($spaceId, $space);
+                    self::assertSame(100, $limit);
+                    self::assertSame($query, $actualQuery);
+
+                    // The second page must resume after the record already read.
+                    return $offset === 0 ? $firstPage : $secondPage;
+                },
+            );
+
+        $results = $this->gateway->getPaymentMethodConfigurations($spaceId);
+
+        $this->assertCount(2, $results);
+    }
+
     public function testFetchPaymentMethodConfigurationsMapsCorrectly(): void
     {
         $spaceId = 123;
@@ -275,8 +563,8 @@ class TransactionGatewayTest extends TestCase
         // V2 Search with query string: getPaymentMethodConfigurationsSearch($space, $expand, $limit, $offset, $order, $query)
         $this->sdkPaymentConfigService->expects($this->once())
             ->method('getPaymentMethodConfigurationsSearch')
-            ->with($spaceId, null, null, null, null, $query)
-            ->willReturn([$sdkItem1]);
+            ->with($spaceId, null, 100, 0, null, $query)
+            ->willReturn($this->configurationSearchResponse([$sdkItem1]));
 
         $results = $this->gateway->getPaymentMethodConfigurations($spaceId, );
 
@@ -587,6 +875,64 @@ class TransactionGatewayTest extends TestCase
         $context->billingAddress->country = 'CH';
 
         return $context;
+    }
+
+    /**
+     * invoiceMerchantReference must also reach the SDK payload on update,
+     * mirroring the create() mapping.
+     */
+    public function testUpdateMapsInvoiceMerchantReferenceWhenSet(): void
+    {
+        $context = $this->buildMinimalContext();
+        $context->invoiceMerchantReference = 'INV-002';
+
+        $sdkTx = new SdkTransaction();
+        $sdkTx->setId(791);
+        $sdkTx->setLinkedSpaceId(123);
+        $sdkTx->setVersion(2);
+        $sdkTx->setState(SdkTransactionState::PENDING);
+
+        $this->sdkTransactionsService->expects($this->once())
+            ->method('patchPaymentTransactionsId')
+            ->with(
+                456,
+                $this->equalTo(123),
+                $this->callback(fn ($pending) => $pending->getInvoiceMerchantReference() === 'INV-002'),
+            )
+            ->willReturn($sdkTx);
+
+        $this->gateway->update(456, 1, $context);
+    }
+
+    /**
+     * metaData and allowedPaymentMethodConfigurations must also reach the SDK
+     * payload on update, mirroring the create() mapping.
+     */
+    public function testUpdateMapsMetaDataAndAllowedPaymentMethodConfigurationsWhenSet(): void
+    {
+        $context = $this->buildMinimalContext();
+        $context->metaData = ['orderSource' => 'web'];
+        $context->allowedPaymentMethodConfigurations = [111, 222];
+
+        $sdkTx = new SdkTransaction();
+        $sdkTx->setId(786);
+        $sdkTx->setLinkedSpaceId(123);
+        $sdkTx->setVersion(2);
+        $sdkTx->setState(SdkTransactionState::PENDING);
+
+        $this->sdkTransactionsService->expects($this->once())
+            ->method('patchPaymentTransactionsId')
+            ->with(
+                456,
+                $this->equalTo(123),
+                $this->callback(function ($pending) {
+                    return $pending->getMetaData() === ['orderSource' => 'web']
+                        && $pending->getAllowedPaymentMethodConfigurations() === [111, 222];
+                }),
+            )
+            ->willReturn($sdkTx);
+
+        $this->gateway->update(456, 1, $context);
     }
 
     public function testUpdateMarksVersionConflictAsRetryable(): void

@@ -19,6 +19,7 @@ use WeArePlanet\Sdk\ApiException;
 use WeArePlanet\Sdk\Model\FailureReason as SdkFailureReason;
 use WeArePlanet\Sdk\Model\Refund as SdkRefund;
 use WeArePlanet\Sdk\Model\RefundCreate as SdkRefundCreate;
+use WeArePlanet\Sdk\Model\RefundSearchResponse as SdkRefundSearchResponse;
 use WeArePlanet\Sdk\Model\RefundState as SdkRefundState;
 use WeArePlanet\Sdk\Service\RefundsService as SdkRefundsService;
 
@@ -45,6 +46,20 @@ class RefundGatewayTest extends TestCase
         );
     }
 
+    /**
+     * Wraps refunds in the paged response shape the SDK actually returns.
+     *
+     * @param list<SdkRefund> $refunds
+     */
+    private function searchResponse(array $refunds, bool $hasMore = false): SdkRefundSearchResponse
+    {
+        $response = new SdkRefundSearchResponse();
+        $response->setData($refunds);
+        $response->setHasMore($hasMore);
+
+        return $response;
+    }
+
     public function testFindByTransactionReturnsArrayOfRefunds(): void
     {
         $spaceId = 1;
@@ -59,8 +74,8 @@ class RefundGatewayTest extends TestCase
         // V2: getPaymentRefundsSearch($space, filter, limit, offset, order, query)
         $this->refundService->expects($this->once())
             ->method('getPaymentRefundsSearch')
-            ->with($spaceId, null, null, null, null, "transaction.id:$transactionId")
-            ->willReturn([$sdkRefund]);
+            ->with($spaceId, null, 100, 0, null, "transaction.id:$transactionId")
+            ->willReturn($this->searchResponse([$sdkRefund]));
 
         $results = $this->gateway->findByTransaction($spaceId, $transactionId, );
 
@@ -69,6 +84,47 @@ class RefundGatewayTest extends TestCase
         $this->assertEquals(10, $result->id, );
         $this->assertEquals(50.0, $result->amount, );
         $this->assertEquals('SUCCESSFUL', $result->state->value, );
+    }
+
+    /**
+     * A transaction can carry more refunds than one page holds, so the gateway
+     * must keep asking until the API reports no more.
+     */
+    public function testFindByTransactionPagesUntilTheApiReportsNoMore(): void
+    {
+        $spaceId = 1;
+        $transactionId = 2;
+
+        $makeRefund = static function (int $id): SdkRefund {
+            $refund = new SdkRefund();
+            $refund->setId($id);
+            $refund->setAmount(10.0);
+            $refund->setExternalId("ext-$id");
+            $refund->setState(SdkRefundState::SUCCESSFUL);
+
+            return $refund;
+        };
+
+        $firstPage = $this->searchResponse([$makeRefund(1), $makeRefund(2)], true);
+        $secondPage = $this->searchResponse([$makeRefund(3)], false);
+
+        $this->refundService->expects($this->exactly(2))
+            ->method('getPaymentRefundsSearch')
+            ->willReturnCallback(
+                function (int $space, $expand, int $limit, int $offset, $order, string $query) use ($spaceId, $transactionId, $firstPage, $secondPage) {
+                    self::assertSame($spaceId, $space);
+                    self::assertSame(100, $limit);
+                    self::assertSame("transaction.id:$transactionId", $query);
+
+                    // The second page must resume after the two records already read.
+                    return $offset === 0 ? $firstPage : $secondPage;
+                },
+            );
+
+        $results = $this->gateway->findByTransaction($spaceId, $transactionId);
+
+        $this->assertCount(3, $results);
+        $this->assertSame([1, 2, 3], array_map(static fn (Refund $refund) => $refund->id, $results->all()));
     }
 
     public function testFindByTransactionThrowsRefundExceptionOnError(): void
@@ -124,6 +180,80 @@ class RefundGatewayTest extends TestCase
         $this->assertInstanceOf(Refund::class, $result);
         $this->assertEquals(20, $result->id);
         $this->assertEquals(10.0, $result->amount);
+    }
+
+    /**
+     * A caller-supplied externalId is the idempotency key the API uses to
+     * recognise a retried refund instead of creating a duplicate, so it must
+     * reach the SDK payload unchanged rather than being replaced by a
+     * freshly generated one.
+     */
+    public function testRefundForwardsCallerSuppliedExternalId(): void
+    {
+        $spaceId = 1;
+        $transaction = new Transaction();
+        $transaction->id = 2;
+
+        $context = new RefundContext(
+            $transaction->id,
+            10.0,
+            'ref-1',
+            RefundType::MERCHANT_INITIATED_ONLINE,
+            new RefundLineItemCollection(),
+            externalId: 'shop-retry-key-1',
+        );
+
+        $sdkRefund = new SdkRefund();
+        $sdkRefund->setId(21);
+        $sdkRefund->setAmount(10.0);
+        $sdkRefund->setExternalId('shop-retry-key-1');
+        $sdkRefund->setState(SdkRefundState::PENDING);
+
+        $this->refundService->expects($this->once())
+            ->method('postPaymentRefunds')
+            ->with(
+                $this->equalTo($spaceId),
+                $this->callback(fn (SdkRefundCreate $create) => $create->getExternalId() === 'shop-retry-key-1'),
+            )
+            ->willReturn($sdkRefund);
+
+        $this->gateway->refund($spaceId, $context);
+    }
+
+    /**
+     * Without a caller-supplied externalId, a generated one must still be
+     * sent: the SDK setter rejects null/empty, so omitting the field
+     * entirely is not an option here.
+     */
+    public function testRefundGeneratesExternalIdWhenNotSupplied(): void
+    {
+        $spaceId = 1;
+        $transaction = new Transaction();
+        $transaction->id = 2;
+
+        $context = new RefundContext(
+            $transaction->id,
+            10.0,
+            'ref-1',
+            RefundType::MERCHANT_INITIATED_ONLINE,
+            new RefundLineItemCollection(),
+        );
+
+        $sdkRefund = new SdkRefund();
+        $sdkRefund->setId(22);
+        $sdkRefund->setAmount(10.0);
+        $sdkRefund->setExternalId('generated');
+        $sdkRefund->setState(SdkRefundState::PENDING);
+
+        $this->refundService->expects($this->once())
+            ->method('postPaymentRefunds')
+            ->with(
+                $this->equalTo($spaceId),
+                $this->callback(fn (SdkRefundCreate $create) => is_string($create->getExternalId()) && $create->getExternalId() !== ''),
+            )
+            ->willReturn($sdkRefund);
+
+        $this->gateway->refund($spaceId, $context);
     }
 
     public function testRefundMapsFailureReason(): void

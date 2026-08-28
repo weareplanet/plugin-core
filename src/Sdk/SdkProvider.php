@@ -12,6 +12,20 @@ use WeArePlanet\Sdk\Configuration as SdkConfiguration;
 
 class SdkProvider
 {
+    /**
+     * The largest page the Portal's search endpoints accept.
+     *
+     * Every paginated search validates `limit` against this value and rejects
+     * anything above it before the request is even sent, so it is a hard ceiling
+     * rather than a tuning knob. It is also worth setting explicitly on every
+     * call: omitting `limit` does not mean "no limit", it falls back to the
+     * API's default page of 10 and silently truncates the result.
+     *
+     * Note that `offset` is capped separately, at 10000, so a search cannot page
+     * beyond roughly that many records however small the pages are.
+     */
+    public const MAX_PAGE_SIZE = 100;
+
     private SdkConfiguration $configuration;
     /** @var array<class-string<object>, object> */
     private array $serviceInstances = [];

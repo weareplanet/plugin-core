@@ -13,6 +13,7 @@ use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodCollection;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodGatewayInterface;
 use WeArePlanet\PluginCore\Sdk\PaymentMethodMapperTrait;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
+use WeArePlanet\PluginCore\Sdk\SearchPaginationTrait;
 use WeArePlanet\PluginCore\PaymentMethod\Exception\PaymentMethodException;
 use WeArePlanet\Sdk\Model\PaymentMethodConfiguration as SdkPaymentMethodConfiguration;
 use WeArePlanet\Sdk\Service\PaymentMethodConfigurationsService as SdkPaymentMethodConfigurationService;
@@ -25,6 +26,7 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
 {
     use DomainLoggerTrait;
     use PaymentMethodMapperTrait;
+    use SearchPaginationTrait;
 
     /**
      * @param SdkProvider $sdkProvider The SDK provider.
@@ -87,10 +89,24 @@ class PaymentMethodGateway implements PaymentMethodGatewayInterface
             }
 
             // getPaymentMethodConfigurationsSearch signature: ($space, $expand, $limit, $offset, $order, $query)
-            // We pass null for expand/limit/offset/order, and use query.
-            $results = $service->getPaymentMethodConfigurationsSearch($spaceId, null, null, null, null, $query);
+            // Paged rather than read in one call: callers are promised every
+            // configuration in the space, and a truncated list makes the sync
+            // deactivate methods that are still active.
+            $items = iterator_to_array(
+                $this->paginateSearch(
+                    static function (int $offset) use ($service, $spaceId, $query): object {
+                        return $service->getPaymentMethodConfigurationsSearch(
+                            $spaceId,
+                            null,
+                            SdkProvider::MAX_PAGE_SIZE,
+                            $offset,
+                            null,
+                            $query,
+                        );
+                    },
+                ),
+            );
 
-            $items = (is_object($results) && method_exists($results, 'getData')) ? $results->getData() : (array)$results;
             return new PaymentMethodCollection(...array_map([$this, 'mapToPaymentMethod'], $items));
         } catch (\Throwable $e) {
             $this->logger->error("PaymentMethodGateway: Failed to fetch payment methods from SDK.", [

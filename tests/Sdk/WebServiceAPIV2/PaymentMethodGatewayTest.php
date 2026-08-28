@@ -15,6 +15,7 @@ use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\PaymentMethodGateway;
 use WeArePlanet\Sdk\Model\PaymentMethodConfiguration as SdkPaymentMethodConfiguration;
 use WeArePlanet\Sdk\Model\CreationEntityState as SdkCreationEntityState;
+use WeArePlanet\Sdk\Model\PaymentMethodConfigurationSearchResponse as SdkPaymentMethodConfigurationSearchResponse;
 use WeArePlanet\Sdk\Service\PaymentMethodConfigurationsService as SdkPaymentMethodConfigurationService;
 
 class PaymentMethodGatewayTest extends TestCase
@@ -84,6 +85,20 @@ class PaymentMethodGatewayTest extends TestCase
         $this->gateway->fetchById(1, 10);
     }
 
+    /**
+     * Wraps configurations in the paged response shape the SDK actually returns.
+     *
+     * @param list<SdkPaymentMethodConfiguration> $configs
+     */
+    private function searchResponse(array $configs, bool $hasMore = false): SdkPaymentMethodConfigurationSearchResponse
+    {
+        $response = new SdkPaymentMethodConfigurationSearchResponse();
+        $response->setData($configs);
+        $response->setHasMore($hasMore);
+
+        return $response;
+    }
+
     public function testFetchBySpaceIdReturnsArrayOfPaymentMethods(): void
     {
         $spaceId = 1;
@@ -98,13 +113,54 @@ class PaymentMethodGatewayTest extends TestCase
         // V2 Search: getPaymentMethodConfigurationsSearch($space, $expand, $limit, $offset, $order, $query)
         $this->service->expects($this->once())
             ->method('getPaymentMethodConfigurationsSearch')
-            ->with($spaceId, null, null, null, null, '-state:DELETED')
-            ->willReturn([$sdkConfig1]);
+            ->with($spaceId, null, 100, 0, null, '-state:DELETED')
+            ->willReturn($this->searchResponse([$sdkConfig1]));
 
         $results = $this->gateway->fetchBySpaceId($spaceId);
 
         $this->assertCount(1, $results);
         $this->assertInstanceOf(PaymentMethod::class, $results->all()[0]);
         $this->assertEquals(11, $results->all()[0]->id);
+    }
+
+    public function testFetchBySpaceIdPagesUntilTheApiReportsNoMore(): void
+    {
+        $spaceId = 1;
+
+        $makeConfig = static function (int $id) use ($spaceId): SdkPaymentMethodConfiguration {
+            $config = new SdkPaymentMethodConfiguration();
+            $config->setId($id);
+            $config->setLinkedSpaceId($spaceId);
+            $config->setState(SdkCreationEntityState::ACTIVE);
+            $config->setResolvedTitle(['en-US' => "Method $id"]);
+            $config->setSortOrder(1);
+
+            return $config;
+        };
+
+        $firstPage = new SdkPaymentMethodConfigurationSearchResponse();
+        $firstPage->setData([$makeConfig(11)]);
+        $firstPage->setHasMore(true);
+
+        $secondPage = new SdkPaymentMethodConfigurationSearchResponse();
+        $secondPage->setData([$makeConfig(12)]);
+        $secondPage->setHasMore(false);
+
+        $this->service->expects($this->exactly(2))
+            ->method('getPaymentMethodConfigurationsSearch')
+            ->willReturnCallback(
+                static function (int $space, $expand, int $limit, int $offset, $order, string $query) use ($spaceId, $firstPage, $secondPage) {
+                    self::assertSame($spaceId, $space);
+                    self::assertSame(100, $limit);
+                    self::assertSame('-state:DELETED', $query);
+
+                    return $offset === 0 ? $firstPage : $secondPage;
+                },
+            );
+
+        $results = $this->gateway->fetchBySpaceId($spaceId);
+
+        $this->assertCount(2, $results);
+        $this->assertEquals([11, 12], array_map(static fn (PaymentMethod $method) => $method->id, $results->all()));
     }
 }

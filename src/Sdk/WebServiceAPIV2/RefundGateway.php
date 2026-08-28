@@ -19,6 +19,7 @@ use WeArePlanet\PluginCore\Sdk\DateTimeMapperTrait;
 use WeArePlanet\PluginCore\Sdk\FailureReasonMapperTrait;
 use WeArePlanet\PluginCore\Sdk\LineItemMapperTrait;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
+use WeArePlanet\PluginCore\Sdk\SearchPaginationTrait;
 use WeArePlanet\Sdk\Model\LineItemReductionCreate as SdkLineItemReductionCreate;
 use WeArePlanet\Sdk\Model\Refund as SdkRefund;
 use WeArePlanet\Sdk\Model\RefundCreate as SdkRefundCreate;
@@ -32,6 +33,7 @@ class RefundGateway implements RefundGatewayInterface
     use DateTimeMapperTrait;
     use FailureReasonMapperTrait;
     use LineItemMapperTrait;
+    use SearchPaginationTrait;
 
     private SdkRefundService $sdkRefundService;
 
@@ -50,13 +52,27 @@ class RefundGateway implements RefundGatewayInterface
         $query = "transaction.id:$transactionId";
 
         try {
-            $sdkRefunds = $this->sdkRefundService->getPaymentRefundsSearch($spaceId, null, null, null, null, $query);
+            // A transaction can carry more refunds than one page holds, so page
+            // through the search rather than trusting the first response to be whole.
             $refunds = [];
-            // Handle ListResponse or Array
-            $items = (is_object($sdkRefunds) && method_exists($sdkRefunds, 'getData')) ? $sdkRefunds->getData() : (array)$sdkRefunds;
-            foreach ($items as $sdkRefund) {
+
+            $sdkRefunds = $this->paginateSearch(
+                function (int $offset) use ($spaceId, $query): object {
+                    return $this->sdkRefundService->getPaymentRefundsSearch(
+                        $spaceId,
+                        null,
+                        SdkProvider::MAX_PAGE_SIZE,
+                        $offset,
+                        null,
+                        $query,
+                    );
+                },
+            );
+
+            foreach ($sdkRefunds as $sdkRefund) {
                 $refunds[] = $this->mapToRefund($sdkRefund, $transactionId);
             }
+
             return new RefundCollection(...$refunds);
         } catch (\Throwable $e) {
             $this->logger->error(
@@ -91,7 +107,11 @@ class RefundGateway implements RefundGatewayInterface
             $sdkRefundCreate->setTransaction($context->transactionId);
             $sdkRefundCreate->setAmount($context->amount);
             $sdkRefundCreate->setMerchantReference($context->merchantReference);
-            $sdkRefundCreate->setExternalId(uniqid((string)$context->transactionId . '-', true));
+            // Use the caller-supplied idempotency key when given, so a retried
+            // refund (e.g. after a timeout) is recognised by the API as the
+            // same refund instead of creating a duplicate. Fall back to a
+            // generated ID only when the caller didn't provide one.
+            $sdkRefundCreate->setExternalId($context->externalId ?? uniqid((string)$context->transactionId . '-', true));
             $sdkRefundCreate->setType(match ($context->type->value) {
                 'MERCHANT_INITIATED_ONLINE' => SdkRefundType::MERCHANT_INITIATED_ONLINE,
                 'MERCHANT_INITIATED_OFFLINE' => SdkRefundType::MERCHANT_INITIATED_OFFLINE,

@@ -21,6 +21,7 @@ use WeArePlanet\PluginCore\Sdk\LabelDescriptorMapperTrait;
 use WeArePlanet\PluginCore\Sdk\LanguageMapperTrait;
 use WeArePlanet\PluginCore\Sdk\PaymentConnectorMapperTrait;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
+use WeArePlanet\PluginCore\Sdk\SearchPaginationTrait;
 use WeArePlanet\Sdk\Model\CurrencyListResponse as SdkCurrencyListResponse;
 use WeArePlanet\Sdk\Model\LabelDescriptor as SdkLabelDescriptor;
 use WeArePlanet\Sdk\Model\LabelDescriptorGroup as SdkLabelDescriptorGroup;
@@ -73,8 +74,8 @@ class GlobalDataGateway implements GlobalDataGatewayInterface
     use LabelDescriptorMapperTrait;
     use LanguageMapperTrait;
     use PaymentConnectorMapperTrait;
+    use SearchPaginationTrait;
 
-    private const PAGE_SIZE = 100;
 
     private SdkCurrenciesService $currenciesService;
     private SdkLabelDescriptorsService $labelDescriptorsService;
@@ -165,65 +166,66 @@ class GlobalDataGateway implements GlobalDataGatewayInterface
         $operation = 'getLabelDescriptorsGroupsSearch';
 
         $groups = [];
-        $offset = 0;
 
         // Paginated on this API version: page through until the API reports no more.
-        do {
-            $this->logger->debug('Calling global data operation.', ['operation' => $operation]);
+        $sdkGroups = $this->paginateSearch(
+            function (int $offset) use ($operation): object {
+                $this->logger->debug('Calling global data operation.', ['operation' => $operation]);
 
-            try {
-                $response = $this->labelDescriptorsService->getLabelDescriptorsGroupsSearch(
-                    null,
-                    self::PAGE_SIZE,
-                    $offset,
-                    null,
-                    null,
-                );
-            } catch (\Throwable $e) {
-                $this->logger->error(
-                    'Global data operation failed.',
-                    ['operation' => $operation, 'errorMessage' => $e->getMessage(), 'exception' => $e],
-                );
+                try {
+                    $response = $this->labelDescriptorsService->getLabelDescriptorsGroupsSearch(
+                        null,
+                        SdkProvider::MAX_PAGE_SIZE,
+                        $offset,
+                        null,
+                        null,
+                    );
+                } catch (\Throwable $e) {
+                    $this->logger->error(
+                        'Global data operation failed.',
+                        ['operation' => $operation, 'errorMessage' => $e->getMessage(), 'exception' => $e],
+                    );
 
-                throw SdkProvider::wrapException(
-                    $e,
-                    GlobalDataException::class,
-                    $operation,
-                    [],
-                    'The payment configuration could not be loaded. Please try again later.',
-                );
-            }
-
-            if (!$response instanceof SdkLabelDescriptorGroupSearchResponse) {
-                $errorContext = ['operation' => $operation, 'responseType' => get_debug_type($response)];
-
-                if ($response instanceof SdkRestApiErrorResponse) {
-                    $errorContext['errorMessage'] = $response->getMessage();
-                    $errorContext['errorCode'] = $response->getCode();
+                    throw SdkProvider::wrapException(
+                        $e,
+                        GlobalDataException::class,
+                        $operation,
+                        [],
+                        'The payment configuration could not be loaded. Please try again later.',
+                    );
                 }
 
-                $this->logger->error('Global data operation returned an unexpected response.', $errorContext);
+                if (!$response instanceof SdkLabelDescriptorGroupSearchResponse) {
+                    $errorContext = ['operation' => $operation, 'responseType' => get_debug_type($response)];
 
-                throw SdkProvider::unexpectedResponseException(
-                    GlobalDataException::class,
-                    $operation,
-                    [],
-                    'The payment configuration could not be loaded. Please try again later.',
-                );
-            }
+                    if ($response instanceof SdkRestApiErrorResponse) {
+                        $errorContext['errorMessage'] = $response->getMessage();
+                        $errorContext['errorCode'] = $response->getCode();
+                    }
 
-            foreach ($response->getData() ?? [] as $sdkGroup) {
-                if (!$sdkGroup instanceof SdkLabelDescriptorGroup) {
-                    $this->skippedEntry($operation, $sdkGroup);
+                    $this->logger->error('Global data operation returned an unexpected response.', $errorContext);
 
-                    continue;
+                    throw SdkProvider::unexpectedResponseException(
+                        GlobalDataException::class,
+                        $operation,
+                        [],
+                        'The payment configuration could not be loaded. Please try again later.',
+                    );
                 }
 
-                $groups[] = $this->mapToLabelDescriptorGroup($sdkGroup);
+                return $response;
+            },
+        );
+
+        foreach ($sdkGroups as $sdkGroup) {
+            if (!$sdkGroup instanceof SdkLabelDescriptorGroup) {
+                $this->skippedEntry($operation, $sdkGroup);
+
+                continue;
             }
 
-            $offset += self::PAGE_SIZE;
-        } while ($response->getHasMore());
+            $groups[] = $this->mapToLabelDescriptorGroup($sdkGroup);
+        }
 
         $this->succeeded($operation, count($groups));
 
@@ -238,65 +240,66 @@ class GlobalDataGateway implements GlobalDataGatewayInterface
         $operation = 'getLabelDescriptorsSearch';
 
         $descriptors = [];
-        $offset = 0;
 
         // Paginated on this API version: page through until the API reports no more.
-        do {
-            $this->logger->debug('Calling global data operation.', ['operation' => $operation]);
+        $sdkDescriptors = $this->paginateSearch(
+            function (int $offset) use ($operation): object {
+                $this->logger->debug('Calling global data operation.', ['operation' => $operation]);
 
-            try {
-                $response = $this->labelDescriptorsService->getLabelDescriptorsSearch(
-                    null,
-                    self::PAGE_SIZE,
-                    $offset,
-                    null,
-                    null,
-                );
-            } catch (\Throwable $e) {
-                $this->logger->error(
-                    'Global data operation failed.',
-                    ['operation' => $operation, 'errorMessage' => $e->getMessage(), 'exception' => $e],
-                );
+                try {
+                    $response = $this->labelDescriptorsService->getLabelDescriptorsSearch(
+                        null,
+                        SdkProvider::MAX_PAGE_SIZE,
+                        $offset,
+                        null,
+                        null,
+                    );
+                } catch (\Throwable $e) {
+                    $this->logger->error(
+                        'Global data operation failed.',
+                        ['operation' => $operation, 'errorMessage' => $e->getMessage(), 'exception' => $e],
+                    );
 
-                throw SdkProvider::wrapException(
-                    $e,
-                    GlobalDataException::class,
-                    $operation,
-                    [],
-                    'The payment configuration could not be loaded. Please try again later.',
-                );
-            }
-
-            if (!$response instanceof SdkLabelDescriptorSearchResponse) {
-                $errorContext = ['operation' => $operation, 'responseType' => get_debug_type($response)];
-
-                if ($response instanceof SdkRestApiErrorResponse) {
-                    $errorContext['errorMessage'] = $response->getMessage();
-                    $errorContext['errorCode'] = $response->getCode();
+                    throw SdkProvider::wrapException(
+                        $e,
+                        GlobalDataException::class,
+                        $operation,
+                        [],
+                        'The payment configuration could not be loaded. Please try again later.',
+                    );
                 }
 
-                $this->logger->error('Global data operation returned an unexpected response.', $errorContext);
+                if (!$response instanceof SdkLabelDescriptorSearchResponse) {
+                    $errorContext = ['operation' => $operation, 'responseType' => get_debug_type($response)];
 
-                throw SdkProvider::unexpectedResponseException(
-                    GlobalDataException::class,
-                    $operation,
-                    [],
-                    'The payment configuration could not be loaded. Please try again later.',
-                );
-            }
+                    if ($response instanceof SdkRestApiErrorResponse) {
+                        $errorContext['errorMessage'] = $response->getMessage();
+                        $errorContext['errorCode'] = $response->getCode();
+                    }
 
-            foreach ($response->getData() ?? [] as $sdkDescriptor) {
-                if (!$sdkDescriptor instanceof SdkLabelDescriptor) {
-                    $this->skippedEntry($operation, $sdkDescriptor);
+                    $this->logger->error('Global data operation returned an unexpected response.', $errorContext);
 
-                    continue;
+                    throw SdkProvider::unexpectedResponseException(
+                        GlobalDataException::class,
+                        $operation,
+                        [],
+                        'The payment configuration could not be loaded. Please try again later.',
+                    );
                 }
 
-                $descriptors[] = $this->mapToLabelDescriptor($sdkDescriptor);
+                return $response;
+            },
+        );
+
+        foreach ($sdkDescriptors as $sdkDescriptor) {
+            if (!$sdkDescriptor instanceof SdkLabelDescriptor) {
+                $this->skippedEntry($operation, $sdkDescriptor);
+
+                continue;
             }
 
-            $offset += self::PAGE_SIZE;
-        } while ($response->getHasMore());
+            $descriptors[] = $this->mapToLabelDescriptor($sdkDescriptor);
+        }
 
         $this->succeeded($operation, count($descriptors));
 
@@ -372,65 +375,66 @@ class GlobalDataGateway implements GlobalDataGatewayInterface
         $operation = 'getPaymentConnectorsSearch';
 
         $connectors = [];
-        $offset = 0;
 
         // Paginated on this API version: page through until the API reports no more.
-        do {
-            $this->logger->debug('Calling global data operation.', ['operation' => $operation]);
+        $sdkConnectors = $this->paginateSearch(
+            function (int $offset) use ($operation): object {
+                $this->logger->debug('Calling global data operation.', ['operation' => $operation]);
 
-            try {
-                $response = $this->paymentConnectorsService->getPaymentConnectorsSearch(
-                    null,
-                    self::PAGE_SIZE,
-                    $offset,
-                    null,
-                    null,
-                );
-            } catch (\Throwable $e) {
-                $this->logger->error(
-                    'Global data operation failed.',
-                    ['operation' => $operation, 'errorMessage' => $e->getMessage(), 'exception' => $e],
-                );
+                try {
+                    $response = $this->paymentConnectorsService->getPaymentConnectorsSearch(
+                        null,
+                        SdkProvider::MAX_PAGE_SIZE,
+                        $offset,
+                        null,
+                        null,
+                    );
+                } catch (\Throwable $e) {
+                    $this->logger->error(
+                        'Global data operation failed.',
+                        ['operation' => $operation, 'errorMessage' => $e->getMessage(), 'exception' => $e],
+                    );
 
-                throw SdkProvider::wrapException(
-                    $e,
-                    GlobalDataException::class,
-                    $operation,
-                    [],
-                    'The payment configuration could not be loaded. Please try again later.',
-                );
-            }
-
-            if (!$response instanceof SdkPaymentConnectorSearchResponse) {
-                $errorContext = ['operation' => $operation, 'responseType' => get_debug_type($response)];
-
-                if ($response instanceof SdkRestApiErrorResponse) {
-                    $errorContext['errorMessage'] = $response->getMessage();
-                    $errorContext['errorCode'] = $response->getCode();
+                    throw SdkProvider::wrapException(
+                        $e,
+                        GlobalDataException::class,
+                        $operation,
+                        [],
+                        'The payment configuration could not be loaded. Please try again later.',
+                    );
                 }
 
-                $this->logger->error('Global data operation returned an unexpected response.', $errorContext);
+                if (!$response instanceof SdkPaymentConnectorSearchResponse) {
+                    $errorContext = ['operation' => $operation, 'responseType' => get_debug_type($response)];
 
-                throw SdkProvider::unexpectedResponseException(
-                    GlobalDataException::class,
-                    $operation,
-                    [],
-                    'The payment configuration could not be loaded. Please try again later.',
-                );
-            }
+                    if ($response instanceof SdkRestApiErrorResponse) {
+                        $errorContext['errorMessage'] = $response->getMessage();
+                        $errorContext['errorCode'] = $response->getCode();
+                    }
 
-            foreach ($response->getData() ?? [] as $sdkConnector) {
-                if (!$sdkConnector instanceof SdkPaymentConnector) {
-                    $this->skippedEntry($operation, $sdkConnector);
+                    $this->logger->error('Global data operation returned an unexpected response.', $errorContext);
 
-                    continue;
+                    throw SdkProvider::unexpectedResponseException(
+                        GlobalDataException::class,
+                        $operation,
+                        [],
+                        'The payment configuration could not be loaded. Please try again later.',
+                    );
                 }
 
-                $connectors[] = $this->mapToPaymentConnector($sdkConnector);
+                return $response;
+            },
+        );
+
+        foreach ($sdkConnectors as $sdkConnector) {
+            if (!$sdkConnector instanceof SdkPaymentConnector) {
+                $this->skippedEntry($operation, $sdkConnector);
+
+                continue;
             }
 
-            $offset += self::PAGE_SIZE;
-        } while ($response->getHasMore());
+            $connectors[] = $this->mapToPaymentConnector($sdkConnector);
+        }
 
         $this->succeeded($operation, count($connectors));
 

@@ -68,7 +68,7 @@ class DocumentGatewayTest extends TestCase
         // Invoice Search: getPaymentTransactionsInvoicesSearch($space, filter, limit, offset, order, query)
         $this->invoiceService->expects($this->once())
             ->method('getPaymentTransactionsInvoicesSearch')
-            ->with($spaceId, null, 1, null, null, "completion:40")
+            ->with($spaceId, null, 1, null, null, "completion.id:40")
             ->willReturn([$sdkInvoice]);
 
         $sdkDocument = new SdkRenderedDocument();

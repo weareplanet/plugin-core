@@ -12,6 +12,7 @@ use WeArePlanet\PluginCore\ManualTask\Exception\ManualTaskException;
 use WeArePlanet\PluginCore\ManualTask\ManualTaskGatewayInterface;
 use WeArePlanet\PluginCore\ManualTask\State;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
+use WeArePlanet\PluginCore\Sdk\SearchPaginationTrait;
 use WeArePlanet\Sdk\Service\ManualTasksService as SdkManualTasksService;
 
 /**
@@ -27,8 +28,7 @@ use WeArePlanet\Sdk\Service\ManualTasksService as SdkManualTasksService;
 class ManualTaskGateway implements ManualTaskGatewayInterface
 {
     use DomainLoggerTrait;
-
-    private const PAGE_SIZE = 100;
+    use SearchPaginationTrait;
 
     /**
      * @param SdkProvider $sdkProvider The SDK provider.
@@ -51,24 +51,21 @@ class ManualTaskGateway implements ManualTaskGatewayInterface
             $service = $this->sdkProvider->getService(SdkManualTasksService::class);
 
             $query = sprintf('state:%s', $state->value);
-            $count = 0;
-            $offset = 0;
 
-            do {
-                $page = $service->getManualTasksSearch(
-                    $spaceId,
-                    null,
-                    self::PAGE_SIZE,
-                    $offset,
-                    null,
-                    $query,
-                );
-
-                $count += count($page->getData());
-                $offset += self::PAGE_SIZE;
-            } while ($page->getHasMore());
-
-            return $count;
+            // Counted by walking the generator so that only one page is ever held
+            // in memory, however many tasks the space has.
+            return iterator_count($this->paginateSearch(
+                static function (int $offset) use ($service, $spaceId, $query): object {
+                    return $service->getManualTasksSearch(
+                        $spaceId,
+                        null,
+                        SdkProvider::MAX_PAGE_SIZE,
+                        $offset,
+                        null,
+                        $query,
+                    );
+                },
+            ));
         } catch (\Throwable $e) {
             $this->logger->error('Failed to count manual tasks from SDK.', [
                 'spaceId' => $spaceId,
@@ -94,23 +91,17 @@ class ManualTaskGateway implements ManualTaskGatewayInterface
             /** @var SdkManualTasksService $service */
             $service = $this->sdkProvider->getService(SdkManualTasksService::class);
 
-            $count = 0;
-            $offset = 0;
-
             // No query: the search then returns every manual task in the space.
-            do {
-                $page = $service->getManualTasksSearch(
-                    $spaceId,
-                    null,
-                    self::PAGE_SIZE,
-                    $offset,
-                );
-
-                $count += count($page->getData());
-                $offset += self::PAGE_SIZE;
-            } while ($page->getHasMore());
-
-            return $count;
+            return iterator_count($this->paginateSearch(
+                static function (int $offset) use ($service, $spaceId): object {
+                    return $service->getManualTasksSearch(
+                        $spaceId,
+                        null,
+                        SdkProvider::MAX_PAGE_SIZE,
+                        $offset,
+                    );
+                },
+            ));
         } catch (\Throwable $e) {
             $this->logger->error('Failed to count manual tasks from SDK.', [
                 'spaceId' => $spaceId,

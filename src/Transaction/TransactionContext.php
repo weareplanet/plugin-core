@@ -55,6 +55,14 @@ class TransactionContext
     // --- Settings ---
     public string $currencyCode; // ISO 4217 (e.g., 'EUR')
     public string $language;     // IETF BCP 47 (e.g., 'en-US')
+    public ?CustomersPresence $customersPresence = null;
+
+    /**
+     * Optional device fingerprint identifier forwarded to the gateway for
+     * fraud scoring. Shops that integrate the device-session JS snippet
+     * should provide the resulting cookie value here.
+     */
+    public ?string $deviceSessionIdentifier = null;
 
     // --- Routing ---
     public ?Url $successUrl = null;

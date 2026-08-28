@@ -13,6 +13,7 @@ use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Sdk\ChargeAttemptMapperTrait;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
+use WeArePlanet\PluginCore\Sdk\SearchPaginationTrait;
 use WeArePlanet\PluginCore\Sdk\TransactionMapperTrait;
 use WeArePlanet\PluginCore\Transaction\Transaction;
 use WeArePlanet\Sdk\Model\ChargeAttempt as SdkChargeAttempt;
@@ -46,11 +47,11 @@ class ChargeGateway implements ChargeGatewayInterface
     use ChargeAttemptMapperTrait;
     use TransactionMapperTrait;
     use DomainLoggerTrait;
+    use SearchPaginationTrait;
 
     /**
      * How many attempts to request per page when listing them.
      */
-    private const PAGE_SIZE = 100;
 
     private SdkChargeAttemptsService $service;
     private SdkTransactionsService $transactionsService;
@@ -118,67 +119,68 @@ class ChargeGateway implements ChargeGatewayInterface
         $query = sprintf('charge.transaction.id:%d', $transactionId);
 
         $attempts = [];
-        $offset = 0;
 
         // This endpoint is paginated, so one call is not guaranteed to return every
         // attempt. Callers are promised the complete list, so page until it is.
-        do {
-            $pageContext = ['offset' => $offset] + $context;
-            $this->logger->debug('Calling charge operation.', ['operation' => $operation] + $pageContext);
+        $sdkChargeAttempts = $this->paginateSearch(
+            function (int $offset) use ($spaceId, $query, $operation, $context): object {
+                $pageContext = ['offset' => $offset] + $context;
+                $this->logger->debug('Calling charge operation.', ['operation' => $operation] + $pageContext);
 
-            try {
-                $response = $this->service->getPaymentChargeAttemptsSearch(
-                    $spaceId,
-                    null,
-                    self::PAGE_SIZE,
-                    $offset,
-                    null,
-                    $query,
-                );
-            } catch (\Throwable $e) {
-                $this->logger->error(
-                    'Charge operation failed.',
-                    ['operation' => $operation, 'errorMessage' => $e->getMessage(), 'exception' => $e] + $pageContext,
-                );
+                try {
+                    $response = $this->service->getPaymentChargeAttemptsSearch(
+                        $spaceId,
+                        null,
+                        SdkProvider::MAX_PAGE_SIZE,
+                        $offset,
+                        null,
+                        $query,
+                    );
+                } catch (\Throwable $e) {
+                    $this->logger->error(
+                        'Charge operation failed.',
+                        ['operation' => $operation, 'errorMessage' => $e->getMessage(), 'exception' => $e] + $pageContext,
+                    );
 
-                throw SdkProvider::wrapException(
-                    $e,
-                    ChargeException::class,
-                    $operation,
-                    $pageContext,
-                    'An error occurred while processing the charge.',
-                );
-            }
-
-            // This SDK answers some non-2xx replies with an error model instead of throwing.
-            if (!$response instanceof SdkChargeAttemptSearchResponse) {
-                $errorContext = ['operation' => $operation, 'responseType' => get_debug_type($response)];
-
-                if ($response instanceof SdkRestApiErrorResponse) {
-                    $errorContext['errorMessage'] = $response->getMessage();
-                    $errorContext['errorCode'] = $response->getCode();
+                    throw SdkProvider::wrapException(
+                        $e,
+                        ChargeException::class,
+                        $operation,
+                        $pageContext,
+                        'An error occurred while processing the charge.',
+                    );
                 }
 
-                $this->logger->error(
-                    'Charge operation returned an unexpected response.',
-                    $errorContext + $context,
-                );
+                // This SDK answers some non-2xx replies with an error model instead of throwing.
+                if (!$response instanceof SdkChargeAttemptSearchResponse) {
+                    $errorContext = ['operation' => $operation, 'responseType' => get_debug_type($response)];
 
-                throw SdkProvider::unexpectedResponseException(
-                    ChargeException::class,
-                    $operation,
-                    $context,
-                    'An error occurred while processing the charge.',
-                );
-            }
+                    if ($response instanceof SdkRestApiErrorResponse) {
+                        $errorContext['errorMessage'] = $response->getMessage();
+                        $errorContext['errorCode'] = $response->getCode();
+                    }
 
-            foreach ($response->getData() ?? [] as $sdkChargeAttempt) {
-                $this->validateChargeAttemptResponse($sdkChargeAttempt, $operation, $context);
-                $attempts[] = $this->mapToChargeAttempt($sdkChargeAttempt);
-            }
+                    $this->logger->error(
+                        'Charge operation returned an unexpected response.',
+                        $errorContext + $context,
+                    );
 
-            $offset += self::PAGE_SIZE;
-        } while ($response->getHasMore());
+                    throw SdkProvider::unexpectedResponseException(
+                        ChargeException::class,
+                        $operation,
+                        $context,
+                        'An error occurred while processing the charge.',
+                    );
+                }
+
+                return $response;
+            },
+        );
+
+        foreach ($sdkChargeAttempts as $sdkChargeAttempt) {
+            $this->validateChargeAttemptResponse($sdkChargeAttempt, $operation, $context);
+            $attempts[] = $this->mapToChargeAttempt($sdkChargeAttempt);
+        }
 
         if ($attempts === []) {
             // A transaction with no charge attempts is an ordinary outcome: it may

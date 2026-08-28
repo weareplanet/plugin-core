@@ -84,7 +84,10 @@ class DocumentGateway implements DocumentGatewayInterface
             $completionId = $completionData[0]->getId();
 
             // Find the Invoice linked to the identified Completion.
-            $invoiceQuery = "completion:$completionId";
+            // The relation has to be addressed by its id: a bare 'completion:<id>' term is
+            // accepted but not applied, so the search would answer with arbitrary invoices
+            // from the space and the caller would hand a stranger's document to the merchant.
+            $invoiceQuery = "completion.id:$completionId";
             $invoicesResponse = $this->transactionInvoicesService->getPaymentTransactionsInvoicesSearch($spaceId, null, 1, null, null, $invoiceQuery);
 
             if (is_object($invoicesResponse) && method_exists($invoicesResponse, 'getData')) {
