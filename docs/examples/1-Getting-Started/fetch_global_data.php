@@ -6,13 +6,15 @@ namespace WeArePlanet\Example;
  * Global Data Example
  *
  * Reads every global reference list the WeArePlanet Portal exposes through the single
- * GlobalDataService facade, and demonstrates the two helpers a shop plugin
- * reaches for most often:
+ * GlobalDataService facade, and demonstrates the helpers a shop plugin reaches
+ * for most often:
  *
  * - LanguageCollection::findPrimary() to turn a shop's two-letter locale into
  *   the concrete IETF variant the WeArePlanet Portal expects.
  * - CurrencyRoundingService::round() to round an amount to the decimal places
  *   the currency actually uses.
+ * - Caching label descriptors and their groups, since that catalogue is
+ *   global and rarely changes — see step 4 below.
  *
  * None of these lookups is space-scoped: this is data about the WeArePlanet Portal itself,
  * identical for every space. So unlike every other example here, this one needs
@@ -30,6 +32,7 @@ namespace WeArePlanet\Example;
  */
 
 use WeArePlanet\PluginCore\Examples\Common\EnvSettingsProvider;
+use WeArePlanet\PluginCore\Examples\Common\SimpleCache;
 use WeArePlanet\PluginCore\Examples\Common\SimpleLogger;
 use WeArePlanet\PluginCore\GlobalData\Currency\CurrencyRoundingService;
 use WeArePlanet\PluginCore\GlobalData\Exception\GlobalDataException;
@@ -43,10 +46,13 @@ use WeArePlanet\PluginCore\Settings\Settings;
 error_reporting(E_ALL & ~E_DEPRECATED);
 
 require_once __DIR__ . '/../../../vendor/autoload.php';
-// Loaded explicitly because docs/ is not in composer's autoload map, and the
-// LoggerInterface must be in place before SimpleLogger implements it.
+// Loaded explicitly because docs/ is not in composer's autoload map, and each
+// interface must be in place before its example implementation below does
+// `implements` on it.
 require_once __DIR__ . '/../../../src/Log/LoggerInterface.php';
+require_once __DIR__ . '/../../../src/SharedKernel/CacheInterface.php';
 require_once __DIR__ . '/../Common/SimpleLogger.php';
+require_once __DIR__ . '/../Common/SimpleCache.php';
 require_once __DIR__ . '/../Common/EnvSettingsProvider.php';
 
 // Credentials only — no Space ID. SdkProvider resolves a Space ID on demand, and
@@ -59,7 +65,16 @@ foreach (['PLUGINCORE_DEMO_USER_ID', 'PLUGINCORE_DEMO_API_SECRET'] as $variable)
 }
 
 $logger = new SimpleLogger();
-$sdkProvider = new SdkProvider(new Settings(new EnvSettingsProvider()));
+
+// Caching is entirely optional — pass a cache and label descriptor lookups use
+// it; omit it (pass null, or the parameter entirely) and every lookup below
+// reads through to the API exactly as it would without this parameter existing.
+// SimpleCache here is file-based specifically so that running this script
+// twice — two separate process invocations — demonstrates the second run
+// skipping the API call, the same way two separate admin-page loads would in
+// a real shop. See docs/examples/Common/SimpleCache.php.
+$cache = new SimpleCache(__DIR__ . '/.cache');
+$sdkProvider = new SdkProvider(new Settings(new EnvSettingsProvider()), cache: $cache);
 
 // One gateway, one service, five lookups. A shop plugin wires this up once —
 // typically in its DI container — and injects GlobalDataService wherever it needs
@@ -116,7 +131,12 @@ try {
     // -----------------------------------------------------------------
     // These two resolve the numeric IDs on a charge attempt's labels into names
     // a merchant can read. Fetch both once, then look up by ID as needed.
+    // Timed deliberately: this is the first getLabelDescriptors() call this
+    // process makes, so — with the cache wired up above — it also populates
+    // the cache, which is what the timed call further down is compared against.
+    $start = microtime(true);
     $descriptors = $globalData->getLabelDescriptors();
+    $uncachedCallMs = (microtime(true) - $start) * 1000;
     $groups = $globalData->getLabelDescriptorGroups();
 
     echo "\nLabel descriptors: " . count($descriptors) . " in " . count($groups) . " group(s)\n";
@@ -137,6 +157,36 @@ try {
     //       echo ($descriptor?->name->localize('en-US') ?? $label->descriptorId)
     //           . ': ' . $label->content;
     //   }
+
+    // Caching in action: this second call is served from the cache the first
+    // call above populated — no API call — which is why it is faster than the
+    // first call, timed for comparison. Run this script again as a fresh
+    // process and even *that* first call is served from the cache file
+    // SimpleCache left on disk, which is the actual point: this is what removes
+    // the round trip on every page load in a real shop.
+    $start = microtime(true);
+    $globalData->getLabelDescriptors();
+    $cachedCallMs = (microtime(true) - $start) * 1000;
+
+    echo sprintf("\nFirst getLabelDescriptors() call:  %.2f ms (read through to the API)\n", $uncachedCallMs);
+    echo sprintf("Second getLabelDescriptors() call: %.2f ms (served from cache)\n", $cachedCallMs);
+
+    if ($cachedCallMs > 0.0) {
+        echo sprintf("-> %.0fx faster served from cache.\n", $uncachedCallMs / $cachedCallMs);
+    }
+
+    // A caller that knows the catalogue changed can bypass the cache for the
+    // next call without waiting for the cached entry to expire on its own.
+    // setForceRefresh() is sticky — it stays on until turned back off, so it is
+    // turned off again right after the one call it was meant for.
+    $globalData->setForceRefresh();
+    $globalData->getLabelDescriptors();
+    $globalData->setForceRefresh(false);
+
+    // Or drop the cached entries outright, e.g. from an admin "clear cache" action.
+    $globalData->clearLabelDescriptorsCache();
+    $globalData->clearLabelDescriptorGroupsCache();
+    echo "Cleared the cached label descriptors and groups.\n";
 
     // -----------------------------------------------------------------
     // 5. Currency-correct rounding
@@ -160,7 +210,7 @@ try {
     // One exception type covers all five lookups.
     echo "\n[FAILED] " . $e->getMessage() . "\n";
     echo "Localized: " . $e->getLocalizedMessage()->localize('en-US') . "\n";
-    echo $e->isRetryable() ? "This failure looks transient — retrying may help.\n" : "This failure is terminal.\n";
+    echo $e->isRetryable() ? "This failure looks retryable — retrying may help.\n" : "This failure is terminal.\n";
     exit(1);
 }
 

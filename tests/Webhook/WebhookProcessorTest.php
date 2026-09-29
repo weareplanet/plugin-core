@@ -7,7 +7,7 @@ namespace WeArePlanet\PluginCore\Tests\Webhook;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
-use WeArePlanet\PluginCore\Webhook\Exception\TransientWebhookException;
+use WeArePlanet\PluginCore\Webhook\Exception\RetryableWebhookException;
 use WeArePlanet\PluginCore\Http\Request;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Webhook\Enum\WebhookListener;
@@ -241,16 +241,81 @@ class WebhookProcessorTest extends TestCase
         $this->processor->process($this->requestMock);
     }
 
-    public function testTransientConditionIsLoggedWithItsReasonAndWithoutARawException(): void
+    public function testMissingRequiredFieldsAreAcknowledgedWithoutRetry(): void
     {
-        // A TransientWebhookException is a deliberately caught, self-healing condition.
+        // A payload that cannot be identified is never fixed by redelivery, so it is
+        // logged and dropped instead of being handed back to the portal for a retry.
+        $this->requestMock->method('get')->willReturnMap([
+            ['listenerEntityTechnicalName', null, 'Transaction'],
+            ['entityId', null, 123],
+            ['spaceId', null, null],
+        ]);
+
+        $this->stateFetcherMock->expects($this->never())->method('fetchState');
+        $this->lifecycleHandlerMock->expects($this->never())->method('onFailure');
+        $this->loggerMock->expects($this->once())->method('warning')
+            ->with($this->stringContains('Webhook validation failed.'), $this->anything());
+
+        $this->processor->process($this->requestMock);
+    }
+
+    public function testStateFetcherCommandExceptionIsRethrownForRetry(): void
+    {
+        // A state fetcher failure (e.g. a signature that does not verify) must reach the
+        // generic handler and be re-thrown, not be swallowed as a bad payload.
+        $this->requestMock->method('get')->willReturnMap([
+            ['listenerEntityTechnicalName', null, 'Transaction'],
+            ['entityId', null, 123],
+            ['spaceId', null, 405],
+        ]);
+        $this->stateFetcherMock->method('fetchState')
+            ->willThrowException(new CommandException('Invalid webhook signature: validation check failed.'));
+
+        $this->loggerMock->expects($this->never())->method('warning');
+        $this->expectException(CommandException::class);
+
+        $this->processor->process($this->requestMock);
+    }
+
+    public function testCommandExceptionFromACommandReleasesTheStepAndIsRethrown(): void
+    {
+        // A command failing with a CommandException after preProcess() took its lock
+        // must still run onFailure(), so the lock is released and the portal retries.
+        $this->stateFetcherMock->method('fetchState')->willReturn('COMPLETED');
+        $this->lifecycleHandlerMock->method('getLastProcessedState')->willReturn('PENDING');
+        $this->validatorMock->method('getTransitionPath')->willReturn(['COMPLETED']);
+
+        $commandMock = $this->createMock(WebhookCommandInterface::class);
+        $commandMock->method('execute')->willThrowException(new CommandException('Order could not be updated.'));
+        $listenerMock = $this->createMock(WebhookListenerInterface::class);
+        $listenerMock->method('getCommand')->willReturn($commandMock);
+        $this->registryMock->method('findListener')->willReturn($listenerMock);
+
+        $this->lifecycleHandlerMock->expects($this->once())->method('preProcess')->willReturn(true);
+        $this->lifecycleHandlerMock->expects($this->once())->method('onFailure');
+        $this->lifecycleHandlerMock->expects($this->never())->method('postProcess');
+
+        $this->requestMock->method('get')->willReturnMap([
+            ['listenerEntityTechnicalName', null, 'Transaction'],
+            ['entityId', null, 123],
+            ['spaceId', null, 405],
+        ]);
+
+        $this->expectException(CommandException::class);
+
+        $this->processor->process($this->requestMock);
+    }
+
+    public function testRetryableConditionIsLoggedWithItsReasonAndWithoutARawException(): void
+    {
+        // A RetryableWebhookException is a deliberately caught, self-healing condition.
         // Handing the raw Throwable to the logger makes backends render it with a
         // file-and-line fragment that reads like an unhandled error, so the reason goes
         // into the message instead and no 'exception' key is passed at this level.
         $reason = 'order 000000009 is not yet authorized - deferring capture for retry.';
 
         $command = $this->createMock(WebhookCommandInterface::class);
-        $command->method('execute')->willThrowException(new TransientWebhookException($reason));
+        $command->method('execute')->willThrowException(new RetryableWebhookException($reason));
         $listener = $this->createMock(WebhookListenerInterface::class);
         $listener->method('getCommand')->willReturn($command);
 
@@ -278,7 +343,7 @@ class WebhookProcessorTest extends TestCase
             $this->processor->process($this->requestMock);
             $this->fail('Expected a CommandException.');
         } catch (CommandException $e) {
-            // Expected: the transient branch still re-throws so the WeArePlanet Portal retries.
+            // Expected: the retryable branch still re-throws so the WeArePlanet Portal retries.
         }
 
         $delayed = array_values(array_filter(

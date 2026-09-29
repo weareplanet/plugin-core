@@ -17,6 +17,8 @@ use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\RefundGateway;
 use WeArePlanet\PluginCore\Transaction\Transaction;
 use WeArePlanet\Sdk\ApiException;
 use WeArePlanet\Sdk\Model\FailureReason as SdkFailureReason;
+use WeArePlanet\Sdk\Model\Label as SdkLabel;
+use WeArePlanet\Sdk\Model\LabelDescriptor as SdkLabelDescriptor;
 use WeArePlanet\Sdk\Model\Refund as SdkRefund;
 use WeArePlanet\Sdk\Model\RefundCreate as SdkRefundCreate;
 use WeArePlanet\Sdk\Model\RefundSearchResponse as SdkRefundSearchResponse;
@@ -74,7 +76,7 @@ class RefundGatewayTest extends TestCase
         // V2: getPaymentRefundsSearch($space, filter, limit, offset, order, query)
         $this->refundService->expects($this->once())
             ->method('getPaymentRefundsSearch')
-            ->with($spaceId, null, 100, 0, null, "transaction.id:$transactionId")
+            ->with($spaceId, ['labels'], 100, 0, null, "transaction.id:$transactionId")
             ->willReturn($this->searchResponse([$sdkRefund]));
 
         $results = $this->gateway->findByTransaction($spaceId, $transactionId, );
@@ -84,6 +86,34 @@ class RefundGatewayTest extends TestCase
         $this->assertEquals(10, $result->id, );
         $this->assertEquals(50.0, $result->amount, );
         $this->assertEquals('SUCCESSFUL', $result->state->value, );
+    }
+
+    public function testFindByTransactionMapsLabels(): void
+    {
+        $spaceId = 1;
+        $transactionId = 2;
+
+        $sdkRefund = new SdkRefund();
+        $sdkRefund->setId(11);
+        $sdkRefund->setAmount(25.0);
+        $sdkRefund->setExternalId('ext-11');
+        $sdkRefund->setState(SdkRefundState::SUCCESSFUL);
+
+        $descriptor = new SdkLabelDescriptor();
+        $descriptor->setId(1001);
+        $sdkLabel = new SdkLabel();
+        $sdkLabel->setDescriptor($descriptor);
+        $sdkLabel->setContentAsString('VISA');
+        $sdkRefund->setLabels([$sdkLabel]);
+
+        $this->refundService->method('getPaymentRefundsSearch')
+            ->willReturn($this->searchResponse([$sdkRefund]));
+
+        $result = $this->gateway->findByTransaction($spaceId, $transactionId)->first();
+
+        $this->assertCount(1, $result->labels);
+        $this->assertSame(1001, $result->labels[0]->descriptorId);
+        $this->assertSame('VISA', $result->labels[0]->content);
     }
 
     /**

@@ -12,7 +12,7 @@ use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Webhook\Enum\WebhookListener;
 use WeArePlanet\PluginCore\Webhook\Exception\CommandException;
 use WeArePlanet\PluginCore\Webhook\Exception\SkippedStepException;
-use WeArePlanet\PluginCore\Webhook\Exception\TransientWebhookException;
+use WeArePlanet\PluginCore\Webhook\Exception\RetryableWebhookException;
 use WeArePlanet\PluginCore\Webhook\Listener\WebhookListenerRegistry;
 
 /**
@@ -71,9 +71,8 @@ class WebhookProcessor
             if (!$technicalName || !$entityId || !$spaceId) {
                 // We strictly require these fields to identify which business logic to apply.
                 // Missing fields indicate a bad payload that cannot be recovered.
-                throw new CommandException(
+                throw new \InvalidArgumentException(
                     "Request body is missing required fields (technicalName, entityId, or spaceId). Got technicalName: '{$technicalName}', entityId: '{$entityId}', spaceId: '{$spaceId}'.",
-                    new LocalizedString('Request body is missing required fields (technicalName, entityId, or spaceId).'),
                 );
             }
 
@@ -174,10 +173,14 @@ class WebhookProcessor
                 $currentStateInLoop = $stateToProcess;
             }
 
-        } catch (CommandException $e) {
-            // Validation Failures or Command issues caught as CommandException.
-            // These represent client-side errors (bad payload). We log them as warnings as they don't require system-level intervention.
-            // Normalized for the same reason as the transient branch above: a rejected
+        } catch (\InvalidArgumentException $e) {
+            // Missing Identification Fields
+            // Only the up-front payload check lands here: it runs before any state is
+            // fetched or lock acquired, so there is nothing to release, and redelivering
+            // the same bad payload cannot succeed. Everything else, including a
+            // CommandException from the state fetcher or a command, must reach the
+            // generic handler so onFailure() runs and the portal retries.
+            // Normalized for the same reason as the retryable branch above: a rejected
             // payload is an expected outcome, not a fault to surface with a trace.
             $this->logger->warning(
                 'Webhook validation failed.',
@@ -188,8 +191,8 @@ class WebhookProcessor
                     'reason' => $e->getMessage(),
                 ],
             );
-        } catch (TransientWebhookException $e) {
-            // Transient Failure Hook: same recovery as the generic handler, but
+        } catch (RetryableWebhookException $e) {
+            // Retryable Failure Hook: same recovery as the generic handler, but
             // the consumer told us this is a temporary, self-healing state
             // (e.g. lock contention), so we log at info severity instead of error.
             if ($context && $webhookListener) {
@@ -201,7 +204,7 @@ class WebhookProcessor
             // business — including file-and-line fragments that read as a stack trace —
             // so nothing below error level relies on that.
             $this->logger->info(
-                'Webhook processing delayed: transient condition (will be retried).',
+                'Webhook processing delayed: retryable condition (will be retried).',
                 [
                     'entityId' => $entityId,
                     'spaceId' => $spaceId,
@@ -227,7 +230,7 @@ class WebhookProcessor
 
             // Retry Strategy
             // Re-throwing as CommandException signals the Controller to return a 5xx status.
-            // This prompts the WeArePlanet Portal to retry the delivery later, which is essential for transient failures (e.g. DB locks, network errors).
+            // This prompts the WeArePlanet Portal to retry the delivery later, which is essential for retryable failures (e.g. DB locks, network errors).
             throw new CommandException(
                 "Webhook command execution failed for entity {$entityId} with listener {$technicalName} under space {$spaceId}.",
                 new LocalizedString('Webhook command execution failed.'),

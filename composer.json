@@ -15,15 +15,15 @@
     },
     "require": {
         "php": ">=8.2",
-        "weareplanet/sdk": "^5.0",
-        "guzzlehttp/guzzle": "^7.10"
+        "weareplanet/sdk": "^5.0"
     },
     "require-dev": {
         "phpunit/phpunit": "^11.5",
         "phpstan/phpstan": "^2.1",
         "phpstan/phpstan-phpunit": "^2.0",
         "phpstan/extension-installer": "^1.4",
-        "friendsofphp/php-cs-fixer": "^3.88"
+        "friendsofphp/php-cs-fixer": "^3.88",
+        "psr/simple-cache": "^2.0 || ^3.0"
     },
     "config": {
         "allow-plugins": {

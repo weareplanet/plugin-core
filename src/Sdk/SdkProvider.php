@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\Sdk;
 
 use WeArePlanet\PluginCore\SharedKernel\AbstractDomainException;
+use WeArePlanet\PluginCore\SharedKernel\CacheInterface;
 use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Settings\Settings;
 use WeArePlanet\Sdk\ApiException;
@@ -26,6 +27,34 @@ class SdkProvider
      */
     public const MAX_PAGE_SIZE = 100;
 
+    /**
+     * HTTP status code an `ApiException` carries when the SDK's HTTP client never
+     * received a response at all (DNS/connection/TLS failure) — see {@see isRetryable()}.
+     */
+    private const HTTP_STATUS_NO_RESPONSE = 0;
+
+    /** HTTP status code for a Bad Gateway response. */
+    private const HTTP_STATUS_BAD_GATEWAY = 502;
+
+    /** HTTP status code for a Service Unavailable response. */
+    private const HTTP_STATUS_SERVICE_UNAVAILABLE = 503;
+
+    /** HTTP status code for a Gateway Timeout response. */
+    private const HTTP_STATUS_GATEWAY_TIMEOUT = 504;
+
+    /**
+     * HTTP status codes that indicate a gateway/infrastructure failure rather than a
+     * rejection of the request itself — the request reached some server, but not the
+     * WeArePlanet Portal application, so nothing was processed and replaying
+     * it is expected to succeed once the outage clears (e.g. a brief load balancer or
+     * CDN hiccup in front of the Portal).
+     */
+    private const RETRYABLE_HTTP_STATUS_CODES = [
+        self::HTTP_STATUS_BAD_GATEWAY,
+        self::HTTP_STATUS_SERVICE_UNAVAILABLE,
+        self::HTTP_STATUS_GATEWAY_TIMEOUT,
+    ];
+
     private SdkConfiguration $configuration;
     /** @var array<class-string<object>, object> */
     private array $serviceInstances = [];
@@ -40,10 +69,16 @@ class SdkProvider
      * @param ClientMetadataProviderInterface|null $clientMetadataProvider Identifies the
      *        shop system and plugin to the WeArePlanet Portal. Optional: without one, calls carry no
      *        identification headers and work exactly as before.
+     * @param CacheInterface|null $cache A PSR-16 cache a client may supply to enable
+     *        caching for whichever gateways opt into it (see
+     *        {@see \WeArePlanet\PluginCore\SharedKernel\CacheAwareTrait}). Entirely
+     *        optional: without one, every gateway falls through to an uncached call and
+     *        behaves exactly as before this parameter existed.
      */
     public function __construct(
         private readonly Settings $settings,
         ?ClientMetadataProviderInterface $clientMetadataProvider = null,
+        private readonly ?CacheInterface $cache = null,
     ) {
         // V2 uses SdkConfiguration
         $this->configuration = new SdkConfiguration($settings->getUserId(), $settings->getApiKey());
@@ -88,6 +123,20 @@ class SdkProvider
     public function getConfiguration(): SdkConfiguration
     {
         return $this->configuration;
+    }
+
+    /**
+     * Returns the client-supplied cache, or null when none was configured.
+     *
+     * Nullable by design: a gateway using {@see \WeArePlanet\PluginCore\SharedKernel\CacheAwareTrait}
+     * checks this and falls through to an uncached call when it is null, so
+     * caching stays strictly opt-in from the client's side.
+     *
+     * @return CacheInterface|null The configured cache, or null.
+     */
+    public function getCache(): ?CacheInterface
+    {
+        return $this->cache;
     }
 
     /**
@@ -168,9 +217,9 @@ class SdkProvider
         );
 
         // Classified here rather than in each gateway so that every domain reports a
-        // transient failure the same way. A gateway can still add causes only it can
+        // retryable failure the same way. A gateway can still add causes only it can
         // recognise — a version conflict, say — by calling withRetryable() itself.
-        if (self::isTransient($exception)) {
+        if (self::isRetryable($exception)) {
             $domainException->withRetryable(true);
         }
 
@@ -178,20 +227,27 @@ class SdkProvider
     }
 
     /**
-     * Whether an SDK failure is transient, so retrying the same request may succeed.
+     * Whether an SDK failure is retryable, so retrying the same request may succeed.
      *
      * Code 0 on an ApiException means no HTTP response was ever received, so the
      * request never reached the WeArePlanet Portal: nothing was processed,
      * and replaying it is safe and expected to succeed once the network recovers.
-     * Everything else is treated as terminal, which is the safe default — retrying a
-     * rejected request only repeats the rejection.
+     * A 502/503/504 means a response did come back, but from infrastructure in front
+     * of the Portal rather than the Portal itself — the same "nothing was processed"
+     * reasoning applies. Everything else is treated as terminal, which is the safe
+     * default — retrying a rejected request only repeats the rejection.
      *
      * @param \Throwable $exception The SDK failure to classify.
-     * @return bool True when the failure is transient.
+     * @return bool True when the failure is retryable.
      */
-    private static function isTransient(\Throwable $exception): bool
+    private static function isRetryable(\Throwable $exception): bool
     {
-        return $exception instanceof ApiException && $exception->getCode() === 0;
+        if (!$exception instanceof ApiException) {
+            return false;
+        }
+
+        return $exception->getCode() === self::HTTP_STATUS_NO_RESPONSE
+            || in_array($exception->getCode(), self::RETRYABLE_HTTP_STATUS_CODES, true);
     }
 
     /**

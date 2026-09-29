@@ -9,6 +9,7 @@ These files centralize common setup logic, such as:
 - Autoloading dependencies.
 - Reading configuration from environment variables.
 - Providing a simple logger implementation.
+- Providing a simple, file-based cache implementation.
 - Handling session file persistence for transaction IDs.
 - Initializing the SDK client.
 
@@ -16,6 +17,7 @@ These files centralize common setup logic, such as:
 
 - **bootstrap.php**: The main entry point for examples. It loads dependencies, validates credentials, and returns initialized services.
 - **SimpleLogger.php**: A basic PSR-3 compatible logger that outputs to stdout.
+- **SimpleCache.php**: A basic file-based cache (implements `WeArePlanet\PluginCore\SharedKernel\CacheInterface`), used by [fetch_global_data.php](../1-Getting-Started/fetch_global_data.php) to demonstrate caching label descriptors. For demonstration only — a real plugin points this at whatever cache the host application already has.
 - **EnvSettingsProvider.php**: Reads settings (Space ID, User ID, API Secret) from environment variables.
 - **FilePersistence.php**: Manages storing and retrieving transaction IDs in a local `session.json` file.
 - **TransactionIdLoader.php**: Helper to load transaction IDs from CLI arguments or the session file.

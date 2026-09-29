@@ -7,9 +7,9 @@ This page covers two cross-cutting patterns used throughout PluginCore: knowing 
 Every domain exception thrown by PluginCore extends `AbstractDomainException`, which exposes `isRetryable(): bool`.
 
 - **`false` (the default):** The failure is terminal. It reflects a business-rule or validation error (e.g. `InvalidRefundException`), and retrying the exact same request will fail again — the request itself needs to change.
-- **`true`:** The failure is transient (e.g. a network hiccup, or a concurrent update). Retrying the same request is expected to succeed.
+- **`true`:** The failure is retryable (e.g. a network hiccup, or a concurrent update). Retrying the same request is expected to succeed.
 
-A failure where the request never reached the WeArePlanet Portal — a connection error — is reported as retryable by **every** domain, not just some of them. Individual gateways add the transient causes only they can recognise: `TransactionGateway`, for instance, also treats a version conflict from a concurrent update as retryable, because re-reading and retrying resolves it.
+A failure where the request never reached the WeArePlanet Portal — a connection error — is reported as retryable by **every** domain, not just some of them. Individual gateways add the retryable causes only they can recognise: `TransactionGateway`, for instance, also treats a version conflict from a concurrent update as retryable, because re-reading and retrying resolves it.
 
 ```php
 try {
@@ -21,7 +21,7 @@ try {
 
 👉 **See this in action:** [error_handling.php](../examples/1-Getting-Started/error_handling.php)
 
-`TransientWebhookException` — used when processing incoming webhooks — is always retryable, matching the WeArePlanet Portal's own webhook retry behavior.
+`RetryableWebhookException` — used when processing incoming webhooks — is always retryable, matching the WeArePlanet Portal's own webhook retry behavior.
 
 ## State Capability Predicates
 

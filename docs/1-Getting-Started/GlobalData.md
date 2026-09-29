@@ -16,6 +16,7 @@ One service and one gateway interface cover all five entity types:
   - `getPaymentConnectors(): PaymentConnectorCollection`
   - `getLabelDescriptors(): LabelDescriptorCollection`
   - `getLabelDescriptorGroups(): LabelDescriptorGroupCollection`
+  - Plus caching controls for the last two — see [Caching label descriptors and their groups](#caching-label-descriptors-and-their-groups) below.
 - **`GlobalDataGatewayInterface`** — the same five methods, implemented once per API version.
 
 The entities live in a sub-namespace each, under `GlobalData\<SubDomain>`:
@@ -66,6 +67,34 @@ This lives on `LanguageCollection`, not on the service, deliberately: it is a pu
 
 `PaymentConnector::$paymentMethodId`/`$processorId`/`$supportedFeatureIds` and `LabelDescriptor::$groupId` hold identifiers rather than embedded entities. The underlying APIs disagree on this — one reports a bare ID, the other embeds the whole related entity — and the identifier is the part both always provide. Normalizing upward would mean an extra API call to fetch the missing entity on one API version but not the other, making an otherwise identical read cost differently depending on which API a shop runs on. Resolve the full entity through the corresponding method on the same service when you need it, e.g. `$globalData->getLabelDescriptorGroups()->findById($descriptor->groupId)`.
 
+### Caching label descriptors and their groups
+
+The label descriptor catalogue is global and rarely changes, so `getLabelDescriptors()` and `getLabelDescriptorGroups()` may be served from a cache instead of the API. This is **entirely opt-in** — nothing below is required, and a plugin that skips it keeps reading through to the API exactly as if caching did not exist.
+
+To enable it, give `SdkProvider` a cache when you construct it:
+
+```php
+$sdkProvider = new SdkProvider($settings, cache: $cache);
+```
+
+`$cache` must implement `WeArePlanet\PluginCore\SharedKernel\CacheInterface`. That interface mirrors PSR-16 (`Psr\SimpleCache\CacheInterface`) exactly — if your application already has `psr/simple-cache` installed, PluginCore's interface extends it directly, so any PSR-16 cache (Redis, APCu, a framework's cache pool, ...) satisfies it without an adapter. If it isn't installed, PluginCore defines the same eight methods itself, so implementing one small class is enough — see [`SimpleCache.php`](../examples/Common/SimpleCache.php) for a minimal, file-based one.
+
+Once a cache is configured, control it dynamically on `GlobalDataService` — not through parameters on the read methods themselves, since TTL and force-refresh describe how a call is served, not what a label descriptor is:
+
+```php
+$globalData->setCacheTtl(3600);      // How long a result may be cached for, in seconds.
+$globalData->setForceRefresh();      // Bypass the cache on every call from now on...
+$globalData->getLabelDescriptors();  // ...repopulating it with the fresh result.
+$globalData->setForceRefresh(false); // Sticky, not one-shot: turn it back off explicitly.
+
+$globalData->clearLabelDescriptorsCache();       // Or drop the cached entries outright,
+$globalData->clearLabelDescriptorGroupsCache();  // e.g. from an admin "clear cache" action.
+```
+
+A broken cache never breaks the read: if the cache itself throws (a dropped connection, a misconfigured backend), the call degrades to reading through to the API instead, logging a warning. There is no cache-specific exception to catch.
+
+👉 **See this in action:** [fetch_global_data.php](../examples/1-Getting-Started/fetch_global_data.php) wires up a file-based cache and shows a cached call, a forced refresh, and clearing the cache.
+
 ### Currency-correct rounding
 
 Most ISO 4217 currencies use 2 decimal places, but not all: some (e.g. `JPY`, `KRW`) have no minor unit, others (e.g. `BHD`, `KWD`) use 3. Rounding a JPY amount to 2 decimals invents fractions of a Yen that gateways reject; rounding a KWD amount to 2 silently discards a valid third digit.
@@ -98,7 +127,7 @@ The user ID and secret are still required — they authenticate the request, whi
 
 ## Example
 
-See [fetch_global_data.php](../examples/1-Getting-Started/fetch_global_data.php) for a complete runnable script that reads all five lists, resolves a locale with `findPrimary()`, and rounds amounts by currency. It is the only example here that runs without a Space ID.
+See [fetch_global_data.php](../examples/1-Getting-Started/fetch_global_data.php) for a complete runnable script that reads all five lists, resolves a locale with `findPrimary()`, rounds amounts by currency, and demonstrates caching label descriptors with a file-based cache. It is the only example here that runs without a Space ID.
 
 ## Errors
 

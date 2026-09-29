@@ -22,6 +22,7 @@ use WeArePlanet\PluginCore\Sdk\LanguageMapperTrait;
 use WeArePlanet\PluginCore\Sdk\PaymentConnectorMapperTrait;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Sdk\SearchPaginationTrait;
+use WeArePlanet\PluginCore\SharedKernel\CacheAwareTrait;
 use WeArePlanet\Sdk\Model\CurrencyListResponse as SdkCurrencyListResponse;
 use WeArePlanet\Sdk\Model\LabelDescriptor as SdkLabelDescriptor;
 use WeArePlanet\Sdk\Model\LabelDescriptorGroup as SdkLabelDescriptorGroup;
@@ -64,10 +65,19 @@ use WeArePlanet\Sdk\Service\PaymentConnectorsService as SdkPaymentConnectorsServ
  * Converting SDK models into domain entities — including the payload-shape
  * differences behind those entities — is the mapper traits' job; this class owns
  * the calls, their observability and their failure handling.
+ *
+ * Label descriptors and their groups are also cache-aside candidates (see
+ * {@see \WeArePlanet\PluginCore\SharedKernel\CacheAwareTrait}): when the client
+ * has configured a cache on {@see SdkProvider}, a read may be served from it
+ * instead of the API; without one, both methods behave exactly as before caching
+ * existed. Currencies, languages and payment connectors are not wrapped this way
+ * yet — nothing about the trait limits it to label descriptors, this is simply
+ * where the observed latency was.
  */
 #[LogContext(domain: 'global_data')]
 class GlobalDataGateway implements GlobalDataGatewayInterface
 {
+    use CacheAwareTrait;
     use CurrencyMapperTrait;
     use DomainLoggerTrait;
     use LabelDescriptorGroupMapperTrait;
@@ -76,6 +86,22 @@ class GlobalDataGateway implements GlobalDataGatewayInterface
     use PaymentConnectorMapperTrait;
     use SearchPaginationTrait;
 
+    /**
+     * How long a cached label descriptor (or group) result may be kept, in
+     * seconds, when the caller does not specify its own TTL. This catalogue is
+     * global reference data that rarely changes, so a full day is a reasonable
+     * default — callers who need it fresher can pass their own $ttl, or bypass
+     * the cache entirely with $forceRefresh.
+     */
+    private const DEFAULT_CACHE_TTL = 86400;
+
+    /**
+     * Cache keys are prefixed `weareplanet:` and must stay unique
+     * across the codebase — see {@see \WeArePlanet\PluginCore\SharedKernel\CacheAwareTrait}
+     * for the convention every cache-aside adopter follows.
+     */
+    private const CACHE_KEY_LABEL_DESCRIPTORS = 'weareplanet:global_data:label_descriptors';
+    private const CACHE_KEY_LABEL_DESCRIPTOR_GROUPS = 'weareplanet:global_data:label_descriptor_groups';
 
     private SdkCurrenciesService $currenciesService;
     private SdkLabelDescriptorsService $labelDescriptorsService;
@@ -163,6 +189,20 @@ class GlobalDataGateway implements GlobalDataGatewayInterface
      */
     public function getLabelDescriptorGroups(): LabelDescriptorGroupCollection
     {
+        return $this->remember(
+            self::CACHE_KEY_LABEL_DESCRIPTOR_GROUPS,
+            fn (): LabelDescriptorGroupCollection => $this->fetchLabelDescriptorGroups(),
+            self::DEFAULT_CACHE_TTL,
+        );
+    }
+
+    /**
+     * Reads every label descriptor group directly from the API, with no caching.
+     *
+     * @return LabelDescriptorGroupCollection The label descriptor groups.
+     */
+    private function fetchLabelDescriptorGroups(): LabelDescriptorGroupCollection
+    {
         $operation = 'getLabelDescriptorsGroupsSearch';
 
         $groups = [];
@@ -236,6 +276,20 @@ class GlobalDataGateway implements GlobalDataGatewayInterface
      * @inheritDoc
      */
     public function getLabelDescriptors(): LabelDescriptorCollection
+    {
+        return $this->remember(
+            self::CACHE_KEY_LABEL_DESCRIPTORS,
+            fn (): LabelDescriptorCollection => $this->fetchLabelDescriptors(),
+            self::DEFAULT_CACHE_TTL,
+        );
+    }
+
+    /**
+     * Reads every label descriptor directly from the API, with no caching.
+     *
+     * @return LabelDescriptorCollection The label descriptors.
+     */
+    private function fetchLabelDescriptors(): LabelDescriptorCollection
     {
         $operation = 'getLabelDescriptorsSearch';
 
@@ -439,6 +493,22 @@ class GlobalDataGateway implements GlobalDataGatewayInterface
         $this->succeeded($operation, count($connectors));
 
         return new PaymentConnectorCollection(...$connectors);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function clearLabelDescriptorsCache(): void
+    {
+        $this->forget(self::CACHE_KEY_LABEL_DESCRIPTORS);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function clearLabelDescriptorGroupsCache(): void
+    {
+        $this->forget(self::CACHE_KEY_LABEL_DESCRIPTOR_GROUPS);
     }
 
     /**

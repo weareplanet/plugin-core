@@ -52,4 +52,4 @@ Without these, any example script exits immediately with a "Missing environment 
 
 Two chapter-1 examples need less than that. [Global Data](1-Getting-Started/GlobalData.md) is not space-scoped, so its example needs only `PLUGINCORE_DEMO_USER_ID` and `PLUGINCORE_DEMO_API_SECRET` and wires its own provider rather than using the shared bootstrap. [Error Handling](1-Getting-Started/ErrorHandling.md) is pure domain logic and makes no API call at all, so its example runs with no configuration whatsoever.
 
-[`examples/Common/`](examples/Common/) holds the shared bootstrap and helper classes (logger, settings provider, file persistence) used by every script. See its [README](examples/Common/README.md) for what each file does.
+[`examples/Common/`](examples/Common/) holds the shared bootstrap and helper classes (logger, cache, settings provider, file persistence) used by every script. See its [README](examples/Common/README.md) for what each file does.

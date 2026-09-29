@@ -62,7 +62,8 @@ class ChargeGatewayTest extends TestCase
             ->method('getPaymentChargeAttemptsSearch')
             ->with(
                 self::SPACE_ID,
-                null,
+                // Labels are a related entity this API omits unless expanded.
+                ['labels'],
                 100,
                 0,
                 null,

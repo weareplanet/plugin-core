@@ -7,7 +7,7 @@ namespace WeArePlanet\PluginCore\Tests\SharedKernel;
 use PHPUnit\Framework\TestCase;
 use WeArePlanet\PluginCore\Refund\Exception\InvalidRefundException;
 use WeArePlanet\PluginCore\SharedKernel\AbstractDomainException;
-use WeArePlanet\PluginCore\Webhook\Exception\TransientWebhookException;
+use WeArePlanet\PluginCore\Webhook\Exception\RetryableWebhookException;
 
 class AbstractDomainExceptionTest extends TestCase
 {
@@ -48,9 +48,9 @@ class AbstractDomainExceptionTest extends TestCase
         $this->assertFalse($exception->isRetryable());
     }
 
-    public function testTransientWebhookExceptionIsRetryableByDefault(): void
+    public function testRetryableWebhookExceptionIsRetryableByDefault(): void
     {
-        $exception = new TransientWebhookException('lock contention');
+        $exception = new RetryableWebhookException('lock contention');
 
         $this->assertTrue($exception->isRetryable());
     }

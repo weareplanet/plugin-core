@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Refund;
 
+use WeArePlanet\PluginCore\Charge\Attempt\Label;
 use WeArePlanet\PluginCore\LineItem\LineItemCollection;
 use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\SharedKernel\JsonStringableTrait;
@@ -44,6 +45,12 @@ class Refund
      * @var int
      */
     public int $id;
+
+    /**
+     * @var list<Label> The labels reported for this refund, in the order the API
+     *      returned them.
+     */
+    public array $labels = [];
 
     /**
      * @var LineItemCollection|null The line items included in the refund,

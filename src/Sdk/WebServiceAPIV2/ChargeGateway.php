@@ -128,9 +128,12 @@ class ChargeGateway implements ChargeGatewayInterface
                 $this->logger->debug('Calling charge operation.', ['operation' => $operation] + $pageContext);
 
                 try {
+                    // Labels are a related entity this API omits unless expanded; without
+                    // this, every attempt comes back with an empty labels array regardless
+                    // of what the connector actually reported.
                     $response = $this->service->getPaymentChargeAttemptsSearch(
                         $spaceId,
-                        null,
+                        ['labels'],
                         SdkProvider::MAX_PAGE_SIZE,
                         $offset,
                         null,

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace WeArePlanet\PluginCore\Tests\Sdk;
 
 use PHPUnit\Framework\TestCase;
+use WeArePlanet\PluginCore\SharedKernel\CacheInterface;
 use WeArePlanet\PluginCore\GlobalData\Exception\GlobalDataException;
 use WeArePlanet\PluginCore\Refund\Exception\RefundException;
 use WeArePlanet\Sdk\ApiException;
@@ -46,6 +47,24 @@ class SdkProviderTest extends TestCase
 
         // --- Assert ---
         $this->assertInstanceOf(SdkConfiguration::class, $actualConfig);
+    }
+
+    /**
+     * Caching is strictly opt-in: a provider built without a cache must report
+     * none, so a gateway using CacheAwareTrait falls through to an uncached call.
+     */
+    public function testGetCacheReturnsNullWhenNoneWasConfigured(): void
+    {
+        $this->assertNull($this->sdkProvider->getCache());
+    }
+
+    public function testGetCacheReturnsTheConfiguredInstance(): void
+    {
+        $cache = $this->createMock(CacheInterface::class);
+
+        $sdkProvider = new SdkProvider($this->settingsMock, null, $cache);
+
+        $this->assertSame($cache, $sdkProvider->getCache());
     }
 
     /**
@@ -245,6 +264,64 @@ class SdkProviderTest extends TestCase
         );
 
         $this->assertFalse($wrapped->isRetryable());
+    }
+
+    /**
+     * @dataProvider retryableHttpStatusCodeProvider
+     */
+    public function testWrapExceptionMarksPortalGatewayErrorsAsRetryable(int $statusCode): void
+    {
+        $wrapped = SdkProvider::wrapException(
+            new ApiException('Bad Gateway', $statusCode),
+            RefundException::class,
+            'refund',
+            ['spaceId' => 42],
+            'The payment service is temporarily unavailable.',
+        );
+
+        $this->assertTrue($wrapped->isRetryable());
+    }
+
+    /**
+     * @return array<string, array{int}>
+     */
+    public static function retryableHttpStatusCodeProvider(): array
+    {
+        return [
+            'Bad Gateway' => [502],
+            'Service Unavailable' => [503],
+            'Gateway Timeout' => [504],
+        ];
+    }
+
+    /**
+     * @dataProvider terminalHttpStatusCodeProvider
+     */
+    public function testWrapExceptionTreatsOtherHttpStatusCodesAsTerminal(int $statusCode): void
+    {
+        $wrapped = SdkProvider::wrapException(
+            new ApiException('Rejected', $statusCode),
+            RefundException::class,
+            'refund',
+            ['spaceId' => 42],
+            'The refund was rejected.',
+        );
+
+        $this->assertFalse($wrapped->isRetryable());
+    }
+
+    /**
+     * @return array<string, array{int}>
+     */
+    public static function terminalHttpStatusCodeProvider(): array
+    {
+        return [
+            'Bad Request' => [400],
+            'Unauthorized' => [401],
+            'Not Found' => [404],
+            'Unprocessable Entity' => [422],
+            'Internal Server Error' => [500],
+        ];
     }
 
     public function testWrapExceptionAppliesTheSameClassificationToEveryDomain(): void

@@ -93,6 +93,60 @@ class GlobalDataServiceTest extends TestCase
     }
 
     /**
+     * Caching itself happens on the gateway (see GlobalDataGatewayTest); the
+     * service is a pure passthrough for the two controls, so these tests only
+     * check the forwarding, not the caching behavior those controls trigger.
+     */
+    public function testSetCacheTtlDelegatesToTheGateway(): void
+    {
+        $this->gateway->expects($this->once())->method('setCacheTtl')->with(60);
+
+        $this->service->setCacheTtl(60);
+    }
+
+    public function testSetForceRefreshDefaultsToEnablingItAndDelegatesToTheGateway(): void
+    {
+        $this->gateway->expects($this->once())->method('setForceRefresh')->with(true);
+
+        $this->service->setForceRefresh();
+    }
+
+    public function testSetForceRefreshFalseDelegatesToTheGateway(): void
+    {
+        $this->gateway->expects($this->once())->method('setForceRefresh')->with(false);
+
+        $this->service->setForceRefresh(false);
+    }
+
+    public function testTheConstructorsDefaultCacheTtlIsForwardedToTheGatewayOnce(): void
+    {
+        $this->gateway->expects($this->once())->method('setCacheTtl')->with(3600);
+
+        new GlobalDataService($this->gateway, $this->logger, 3600);
+    }
+
+    public function testTheConstructorNeverCallsSetCacheTtlWhenNoDefaultIsGiven(): void
+    {
+        $this->gateway->expects($this->never())->method('setCacheTtl');
+
+        new GlobalDataService($this->gateway, $this->logger);
+    }
+
+    public function testClearLabelDescriptorsCacheDelegatesToTheGateway(): void
+    {
+        $this->gateway->expects($this->once())->method('clearLabelDescriptorsCache');
+
+        $this->service->clearLabelDescriptorsCache();
+    }
+
+    public function testClearLabelDescriptorGroupsCacheDelegatesToTheGateway(): void
+    {
+        $this->gateway->expects($this->once())->method('clearLabelDescriptorGroupsCache');
+
+        $this->service->clearLabelDescriptorGroupsCache();
+    }
+
+    /**
      * The gateway already produces a domain exception; the service must not re-wrap it.
      *
      * @return list<array{0: string}>

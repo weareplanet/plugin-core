@@ -14,7 +14,7 @@ use WeArePlanet\PluginCore\SharedKernel\AbstractDomainException;
  * that the standard WeArePlanet Portal retry will recover the situation, so it is
  * logged at a low severity instead of as an error.
  */
-class TransientWebhookException extends AbstractDomainException
+class RetryableWebhookException extends AbstractDomainException
 {
     protected bool $retryable = true;
 }

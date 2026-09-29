@@ -9,7 +9,7 @@ namespace WeArePlanet\Example;
  *
  * - State capability predicates: asking what a state *means* instead of comparing
  *   it against a hardcoded list of cases.
- * - isRetryable() on a domain exception: telling a transient failure worth
+ * - isRetryable() on a domain exception: telling a retryable failure worth
  *   retrying apart from a terminal one worth reporting.
  *
  * Both are pure domain logic, so this script makes no API call. It needs no
@@ -74,7 +74,7 @@ if ($state->isPaidLike()) {
 // ---------------------------------------------------------------------------
 //
 // The *gateway* decides retryability when it wraps a failure: it flags the causes
-// it can identify as transient — a connection error, or a version conflict where
+// it can identify as retryable — a connection error, or a version conflict where
 // another process updated the record concurrently. Everything else stays terminal,
 // which is the safe default.
 //
@@ -90,12 +90,12 @@ $terminal = new RefundException(
 );
 
 // What a gateway does after catching a ConnectionException.
-$transient = (new RefundException(
+$retryable = (new RefundException(
     'Refund failed: could not reach the API [spaceId=42, transactionId=1234]',
     new LocalizedString('The payment service is temporarily unreachable.'),
 ))->withRetryable(true);
 
-foreach ([$terminal, $transient] as $exception) {
+foreach ([$terminal, $retryable] as $exception) {
     describe($exception);
 }
 
