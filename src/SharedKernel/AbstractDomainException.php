@@ -15,7 +15,7 @@ abstract class AbstractDomainException extends \Exception
      *
      * Defaults to false: an exception is assumed terminal (e.g. a business-rule
      * violation) unless a subclass declares otherwise, or a caller identifies
-     * the underlying cause as transient via {@see withRetryable()}.
+     * the underlying cause as retryable via {@see withRetryable()}.
      */
     protected bool $retryable = false;
 
@@ -37,7 +37,7 @@ abstract class AbstractDomainException extends \Exception
     /**
      * Whether retrying the same operation is likely to succeed.
      *
-     * True for transient failures (e.g. a network timeout or a concurrent
+     * True for retryable failures (e.g. a network timeout or a concurrent
      * modification/version conflict). False for terminal failures (e.g. a
      * business-rule or validation failure) that will not succeed on retry
      * without changing the request.
@@ -51,7 +51,7 @@ abstract class AbstractDomainException extends \Exception
      * Overrides the retryability of this exception instance.
      *
      * Intended for call sites that catch a lower-level exception and can
-     * identify it as transient (e.g. a connection error) before wrapping it
+     * identify it as retryable (e.g. a connection error) before wrapping it
      * into a domain exception.
      */
     public function withRetryable(bool $retryable = true): static

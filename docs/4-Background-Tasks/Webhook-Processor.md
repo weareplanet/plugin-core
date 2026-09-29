@@ -114,7 +114,7 @@ A `Command` contains the **pure business logic**.
 
 **Important:** Commands must follow the **"Safe Update"** pattern. Always reload the resource (Order) from the database to ensure it isn't stale, and check for protected states (e.g., "Payment Review") before overwriting status. See the **[Architecture Overview](Webhook-Processor-ARCHITECTURE.md)** document for more information.
 
-**Transient failures:** If the command (or your `preProcess()` lock acquisition) hits a temporary, self-healing condition — e.g. a lock contention timeout under concurrent deliveries — throw a `TransientWebhookException` (`WeArePlanet\PluginCore\Webhook\Exception`). The core performs the normal rollback and 5xx-retry flow but logs the event at `info` severity instead of `error`, keeping the logs free of false alarms. See **[Failure Handling & Retries](Webhook-Processor-ARCHITECTURE.md)** for details.
+**Retryable failures:** If the command (or your `preProcess()` lock acquisition) hits a temporary, self-healing condition — e.g. a lock contention timeout under concurrent deliveries — throw a `RetryableWebhookException` (`WeArePlanet\PluginCore\Webhook\Exception`). The core performs the normal rollback and 5xx-retry flow but logs the event at `info` severity instead of `error`, keeping the logs free of false alarms. See **[Failure Handling & Retries](Webhook-Processor-ARCHITECTURE.md)** for details.
 
 ### Step 5: Create the Rule (The `Listener`)
 

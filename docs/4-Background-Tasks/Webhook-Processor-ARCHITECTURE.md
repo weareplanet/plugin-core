@@ -67,17 +67,17 @@ The processor does not open a database transaction itself — `DefaultWebhookLif
 
 Any exception thrown during a step triggers the same recovery path: the processor calls `onFailure()` — which releases the locks, and rolls back a database transaction if your handler opened one — and re-throws a `CommandException`. The entry-point controller should translate this into a **5xx response**, which instructs the WeArePlanet Portal to redeliver the webhook later.
 
-### Transient Failures (Expected Contention)
+### Retryable Failures (Expected Contention)
 
 Not every failure is a defect. Under concurrent deliveries, a lock acquisition can legitimately time out — the WeArePlanet Portal retry will succeed on the next attempt. Throwing a generic exception in that situation floods the logs with `error` entries for a self-healing state.
 
-To signal this, throw a `TransientWebhookException` (from `preProcess()` or a `Command`):
+To signal this, throw a `RetryableWebhookException` (from `preProcess()` or a `Command`):
 
 ```php
-use WeArePlanet\PluginCore\Webhook\Exception\TransientWebhookException;
+use WeArePlanet\PluginCore\Webhook\Exception\RetryableWebhookException;
 
 if (!$this->lockService->acquire($resourceId, timeoutSeconds: 5)) {
-    throw new TransientWebhookException('Lock contention: resource is busy, the retry will recover.');
+    throw new RetryableWebhookException('Lock contention: resource is busy, the retry will recover.');
 }
 ```
 

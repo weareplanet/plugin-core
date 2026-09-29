@@ -20,6 +20,7 @@ use WeArePlanet\PluginCore\Sdk\LabelDescriptorMapperTrait;
 use WeArePlanet\PluginCore\Sdk\LanguageMapperTrait;
 use WeArePlanet\PluginCore\Sdk\PaymentConnectorMapperTrait;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
+use WeArePlanet\PluginCore\SharedKernel\CacheAwareTrait;
 use WeArePlanet\Sdk\Model\LabelDescriptor as SdkLabelDescriptor;
 use WeArePlanet\Sdk\Model\LabelDescriptorGroup as SdkLabelDescriptorGroup;
 use WeArePlanet\Sdk\Model\PaymentConnector as SdkPaymentConnector;
@@ -45,16 +46,42 @@ use WeArePlanet\Sdk\Service\PaymentConnectorService as SdkPaymentConnectorServic
  * version, so this class holds all five. Converting SDK models into domain
  * entities is the mapper traits' job; this class owns the calls, their
  * observability and their failure handling.
+ *
+ * Label descriptors and their groups are also cache-aside candidates (see
+ * {@see \WeArePlanet\PluginCore\SharedKernel\CacheAwareTrait}): when the client
+ * has configured a cache on {@see SdkProvider}, a read may be served from it
+ * instead of the API; without one, both methods behave exactly as before caching
+ * existed. Currencies, languages and payment connectors are not wrapped this way
+ * yet — nothing about the trait limits it to label descriptors, this is simply
+ * where the observed latency was.
  */
 #[LogContext(domain: 'global_data')]
 class GlobalDataGateway implements GlobalDataGatewayInterface
 {
+    use CacheAwareTrait;
     use CurrencyMapperTrait;
     use DomainLoggerTrait;
     use LabelDescriptorGroupMapperTrait;
     use LabelDescriptorMapperTrait;
     use LanguageMapperTrait;
     use PaymentConnectorMapperTrait;
+    private const CACHE_KEY_LABEL_DESCRIPTOR_GROUPS = 'weareplanet:global_data:label_descriptor_groups';
+
+    /**
+     * Cache keys are prefixed `weareplanet:` and must stay unique
+     * across the codebase — see {@see \WeArePlanet\PluginCore\SharedKernel\CacheAwareTrait}
+     * for the convention every cache-aside adopter follows.
+     */
+    private const CACHE_KEY_LABEL_DESCRIPTORS = 'weareplanet:global_data:label_descriptors';
+
+    /**
+     * How long a cached label descriptor (or group) result may be kept, in
+     * seconds, when the caller does not specify its own TTL. This catalogue is
+     * global reference data that rarely changes, so a full day is a reasonable
+     * default — callers who need it fresher can pass their own $ttl, or bypass
+     * the cache entirely with $forceRefresh.
+     */
+    private const DEFAULT_CACHE_TTL = 86400;
 
     private SdkCurrencyService $currencyService;
     private SdkLabelDescriptionGroupService $labelDescriptorGroupService;
@@ -76,6 +103,112 @@ class GlobalDataGateway implements GlobalDataGatewayInterface
         $this->paymentConnectorService = $this->sdkProvider->getService(SdkPaymentConnectorService::class);
         $this->labelDescriptorService = $this->sdkProvider->getService(SdkLabelDescriptionService::class);
         $this->labelDescriptorGroupService = $this->sdkProvider->getService(SdkLabelDescriptionGroupService::class);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function clearLabelDescriptorGroupsCache(): void
+    {
+        $this->forget(self::CACHE_KEY_LABEL_DESCRIPTOR_GROUPS);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function clearLabelDescriptorsCache(): void
+    {
+        $this->forget(self::CACHE_KEY_LABEL_DESCRIPTORS);
+    }
+
+    /**
+     * Reads every label descriptor group directly from the API, with no caching.
+     *
+     * @return LabelDescriptorGroupCollection The label descriptor groups.
+     */
+    private function fetchLabelDescriptorGroups(): LabelDescriptorGroupCollection
+    {
+        $operation = 'labelDescriptionGroup.all';
+        $this->logger->debug('Calling global data operation.', ['operation' => $operation]);
+
+        try {
+            $response = $this->labelDescriptorGroupService->all();
+        } catch (\Throwable $e) {
+            $this->logger->error(
+                'Global data operation failed.',
+                ['operation' => $operation, 'errorMessage' => $e->getMessage(), 'exception' => $e],
+            );
+
+            throw SdkProvider::wrapException(
+                $e,
+                GlobalDataException::class,
+                $operation,
+                [],
+                'The payment configuration could not be loaded. Please try again later.',
+            );
+        }
+
+        $results = $this->requireList($response, $operation);
+
+        $groups = [];
+        foreach ($results as $sdkGroup) {
+            if (!$sdkGroup instanceof SdkLabelDescriptorGroup) {
+                $this->skippedEntry($operation, $sdkGroup);
+
+                continue;
+            }
+
+            $groups[] = $this->mapToLabelDescriptorGroup($sdkGroup);
+        }
+
+        $this->succeeded($operation, count($groups));
+
+        return new LabelDescriptorGroupCollection(...$groups);
+    }
+
+    /**
+     * Reads every label descriptor directly from the API, with no caching.
+     *
+     * @return LabelDescriptorCollection The label descriptors.
+     */
+    private function fetchLabelDescriptors(): LabelDescriptorCollection
+    {
+        $operation = 'labelDescription.all';
+        $this->logger->debug('Calling global data operation.', ['operation' => $operation]);
+
+        try {
+            $response = $this->labelDescriptorService->all();
+        } catch (\Throwable $e) {
+            $this->logger->error(
+                'Global data operation failed.',
+                ['operation' => $operation, 'errorMessage' => $e->getMessage(), 'exception' => $e],
+            );
+
+            throw SdkProvider::wrapException(
+                $e,
+                GlobalDataException::class,
+                $operation,
+                [],
+                'The payment configuration could not be loaded. Please try again later.',
+            );
+        }
+
+        $results = $this->requireList($response, $operation);
+
+        $descriptors = [];
+        foreach ($results as $sdkDescriptor) {
+            if (!$sdkDescriptor instanceof SdkLabelDescriptor) {
+                $this->skippedEntry($operation, $sdkDescriptor);
+
+                continue;
+            }
+
+            $descriptors[] = $this->mapToLabelDescriptor($sdkDescriptor);
+        }
+
+        $this->succeeded($operation, count($descriptors));
+
+        return new LabelDescriptorCollection(...$descriptors);
     }
 
 
@@ -127,42 +260,11 @@ class GlobalDataGateway implements GlobalDataGatewayInterface
      */
     public function getLabelDescriptorGroups(): LabelDescriptorGroupCollection
     {
-        $operation = 'labelDescriptionGroup.all';
-        $this->logger->debug('Calling global data operation.', ['operation' => $operation]);
-
-        try {
-            $response = $this->labelDescriptorGroupService->all();
-        } catch (\Throwable $e) {
-            $this->logger->error(
-                'Global data operation failed.',
-                ['operation' => $operation, 'errorMessage' => $e->getMessage(), 'exception' => $e],
-            );
-
-            throw SdkProvider::wrapException(
-                $e,
-                GlobalDataException::class,
-                $operation,
-                [],
-                'The payment configuration could not be loaded. Please try again later.',
-            );
-        }
-
-        $results = $this->requireList($response, $operation);
-
-        $groups = [];
-        foreach ($results as $sdkGroup) {
-            if (!$sdkGroup instanceof SdkLabelDescriptorGroup) {
-                $this->skippedEntry($operation, $sdkGroup);
-
-                continue;
-            }
-
-            $groups[] = $this->mapToLabelDescriptorGroup($sdkGroup);
-        }
-
-        $this->succeeded($operation, count($groups));
-
-        return new LabelDescriptorGroupCollection(...$groups);
+        return $this->remember(
+            self::CACHE_KEY_LABEL_DESCRIPTOR_GROUPS,
+            fn (): LabelDescriptorGroupCollection => $this->fetchLabelDescriptorGroups(),
+            self::DEFAULT_CACHE_TTL,
+        );
     }
 
     /**
@@ -170,42 +272,11 @@ class GlobalDataGateway implements GlobalDataGatewayInterface
      */
     public function getLabelDescriptors(): LabelDescriptorCollection
     {
-        $operation = 'labelDescription.all';
-        $this->logger->debug('Calling global data operation.', ['operation' => $operation]);
-
-        try {
-            $response = $this->labelDescriptorService->all();
-        } catch (\Throwable $e) {
-            $this->logger->error(
-                'Global data operation failed.',
-                ['operation' => $operation, 'errorMessage' => $e->getMessage(), 'exception' => $e],
-            );
-
-            throw SdkProvider::wrapException(
-                $e,
-                GlobalDataException::class,
-                $operation,
-                [],
-                'The payment configuration could not be loaded. Please try again later.',
-            );
-        }
-
-        $results = $this->requireList($response, $operation);
-
-        $descriptors = [];
-        foreach ($results as $sdkDescriptor) {
-            if (!$sdkDescriptor instanceof SdkLabelDescriptor) {
-                $this->skippedEntry($operation, $sdkDescriptor);
-
-                continue;
-            }
-
-            $descriptors[] = $this->mapToLabelDescriptor($sdkDescriptor);
-        }
-
-        $this->succeeded($operation, count($descriptors));
-
-        return new LabelDescriptorCollection(...$descriptors);
+        return $this->remember(
+            self::CACHE_KEY_LABEL_DESCRIPTORS,
+            fn (): LabelDescriptorCollection => $this->fetchLabelDescriptors(),
+            self::DEFAULT_CACHE_TTL,
+        );
     }
 
     /**

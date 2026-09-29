@@ -47,6 +47,12 @@ class RecurringTransactionService
         // The original transaction must have been created with tokenizationMode = FORCE_CREATION
         // so the API automatically generates a token when the payment completes.
         if ($originalTransaction->token === null) {
+            $this->logger->error(
+                "Transaction has no token. Recurring payments require the original transaction to have been created with tokenizationMode = FORCE_CREATION.",
+                [
+                    'transactionId' => $transactionId,
+                ],
+            );
             throw new MissingTokenException(
                 "Transaction $transactionId has no token. "
                 . "The original transaction must be created with tokenizationMode = FORCE_CREATION "

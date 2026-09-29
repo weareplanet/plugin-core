@@ -45,7 +45,7 @@ try {
     $chargeAttempt = $charge->findSuccessfulAttemptByTransaction($spaceId, $transactionId);
 } catch (ChargeException $e) {
     echo "ERROR: {$e->getMessage()}\n";
-    echo $e->isRetryable() ? "This failure looks transient — retrying may help.\n" : "This failure is terminal.\n";
+    echo $e->isRetryable() ? "This failure looks retryable — retrying may help.\n" : "This failure is terminal.\n";
     exit(1);
 }
 

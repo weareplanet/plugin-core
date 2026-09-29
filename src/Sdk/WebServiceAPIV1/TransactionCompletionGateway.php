@@ -10,6 +10,7 @@ use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
 use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Sdk\FailureReasonMapperTrait;
+use WeArePlanet\PluginCore\Sdk\LabelMapperTrait;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Transaction\Completion\CaptureRequest;
 use WeArePlanet\PluginCore\Transaction\Completion\Exception\CompletionException;
@@ -36,6 +37,7 @@ class TransactionCompletionGateway implements TransactionCompletionGatewayInterf
 {
     use DomainLoggerTrait;
     use FailureReasonMapperTrait;
+    use LabelMapperTrait;
 
     public function __construct(
         private readonly SdkProvider $sdkProvider,
@@ -251,6 +253,8 @@ class TransactionCompletionGateway implements TransactionCompletionGatewayInterf
                 return $item;
             }, $sdkCompletion->getLineItems());
         }
+
+        $completion->labels = $this->mapToLabels($sdkCompletion->getLabels());
 
         return $completion;
     }

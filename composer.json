@@ -22,7 +22,8 @@
         "phpstan/phpstan": "^2.1",
         "phpstan/phpstan-phpunit": "^2.0",
         "phpstan/extension-installer": "^1.4",
-        "friendsofphp/php-cs-fixer": "^3.88"
+        "friendsofphp/php-cs-fixer": "^3.88",
+        "psr/simple-cache": "^2.0 || ^3.0"
     },
     "scripts": {
         "test": "./vendor/bin/phpunit"

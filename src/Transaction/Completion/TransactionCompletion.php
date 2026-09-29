@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Transaction\Completion;
 
+use WeArePlanet\PluginCore\Charge\Attempt\Label;
 use WeArePlanet\PluginCore\LineItem\LineItem;
 use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\SharedKernel\JsonStringableTrait;
@@ -26,6 +27,12 @@ class TransactionCompletion
      * @var int The completion ID.
      */
     public int $id;
+
+    /**
+     * @var list<Label> The labels reported for this completion, in the order the
+     *      API returned them.
+     */
+    public array $labels = [];
 
     /**
      * @var array<LineItem>|null The line items to capture (null for full capture).

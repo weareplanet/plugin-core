@@ -16,6 +16,7 @@ use WeArePlanet\PluginCore\Refund\RefundGatewayInterface;
 use WeArePlanet\PluginCore\Refund\State as StateEnum;
 use WeArePlanet\PluginCore\Sdk\DateTimeMapperTrait;
 use WeArePlanet\PluginCore\Sdk\FailureReasonMapperTrait;
+use WeArePlanet\PluginCore\Sdk\LabelMapperTrait;
 use WeArePlanet\PluginCore\Sdk\LineItemMapperTrait;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\Sdk\Model\CriteriaOperator as SdkCriteriaOperator;
@@ -34,6 +35,7 @@ class RefundGateway implements RefundGatewayInterface
     use DateTimeMapperTrait;
     use DomainLoggerTrait;
     use FailureReasonMapperTrait;
+    use LabelMapperTrait;
     use LineItemMapperTrait;
 
     private SdkRefundService $sdkRefundService;
@@ -150,6 +152,8 @@ class RefundGateway implements RefundGatewayInterface
         if (!empty($sdkReducedLineItems)) {
             $refund->reducedLineItems = new LineItemCollection(...array_map([$this, 'mapToLineItem'], $sdkReducedLineItems));
         }
+
+        $refund->labels = $this->mapToLabels($sdkRefund->getLabels());
 
         return $refund;
     }

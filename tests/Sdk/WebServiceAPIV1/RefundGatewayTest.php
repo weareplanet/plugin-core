@@ -17,6 +17,8 @@ use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\RefundGateway;
 use WeArePlanet\PluginCore\Transaction\Transaction;
 use WeArePlanet\Sdk\Http\ConnectionException;
 use WeArePlanet\Sdk\Model\FailureReason as SdkFailureReason;
+use WeArePlanet\Sdk\Model\Label as SdkLabel;
+use WeArePlanet\Sdk\Model\LabelDescriptor as SdkLabelDescriptor;
 use WeArePlanet\Sdk\Model\Refund as SdkRefund;
 use WeArePlanet\Sdk\Model\RefundCreate as SdkRefundCreate;
 use WeArePlanet\Sdk\Model\RefundState;
@@ -43,6 +45,30 @@ class RefundGatewayTest extends TestCase
             $this->sdkProvider,
             $this->logger,
         );
+    }
+
+    public function testFindByTransactionMapsLabels(): void
+    {
+        $sdkRefund = new SdkRefund();
+        $sdkRefund->setId(11);
+        $sdkRefund->setAmount(25.0);
+        $sdkRefund->setExternalId('ext-11');
+        $sdkRefund->setState(RefundState::SUCCESSFUL);
+
+        $descriptor = new SdkLabelDescriptor();
+        $descriptor->setId(1001);
+        $sdkLabel = new SdkLabel();
+        $sdkLabel->setDescriptor($descriptor);
+        $sdkLabel->setContentAsString('VISA');
+        $sdkRefund->setLabels([$sdkLabel]);
+
+        $this->refundService->method('search')->willReturn([$sdkRefund]);
+
+        $result = $this->gateway->findByTransaction(1, 2)->first();
+
+        $this->assertCount(1, $result->labels);
+        $this->assertSame(1001, $result->labels[0]->descriptorId);
+        $this->assertSame('VISA', $result->labels[0]->content);
     }
 
     public function testFindByTransactionReturnsArrayOfRefunds(): void

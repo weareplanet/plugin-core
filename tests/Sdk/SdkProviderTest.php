@@ -11,6 +11,7 @@ use WeArePlanet\PluginCore\Sdk\ClientMetadata;
 use WeArePlanet\PluginCore\Sdk\ClientMetadataProviderInterface;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Settings\Settings;
+use WeArePlanet\PluginCore\SharedKernel\CacheInterface;
 use WeArePlanet\Sdk\ApiClient;
 use WeArePlanet\Sdk\ApiException;
 use WeArePlanet\Sdk\Http\ConnectionException;
@@ -20,6 +21,18 @@ class SdkProviderTest extends TestCase
 {
     private SdkProvider $sdkProvider;
     private Settings $settingsMock;
+
+    /**
+     * @return array<string, array{int}>
+     */
+    public static function retryableHttpStatusCodeProvider(): array
+    {
+        return [
+            'Bad Gateway' => [502],
+            'Service Unavailable' => [503],
+            'Gateway Timeout' => [504],
+        ];
+    }
 
     /**
      * Sets up the test environment by creating a mock for the Settings and initializing the SdkProvider.
@@ -60,6 +73,20 @@ class SdkProviderTest extends TestCase
                 'https://paymentshub.weareplanet.com/api',
                 'https://paymentshub.weareplanet.com/api',
             ],
+        ];
+    }
+
+    /**
+     * @return array<string, array{int}>
+     */
+    public static function terminalHttpStatusCodeProvider(): array
+    {
+        return [
+            'Bad Request' => [400],
+            'Unauthorized' => [401],
+            'Not Found' => [404],
+            'Unprocessable Entity' => [422],
+            'Internal Server Error' => [500],
         ];
     }
 
@@ -132,6 +159,24 @@ class SdkProviderTest extends TestCase
 
         // --- Assert ---
         $this->assertInstanceOf(ApiClient::class, $actualClient);
+    }
+
+    /**
+     * Caching is strictly opt-in: a provider built without a cache must report
+     * none, so a gateway using CacheAwareTrait falls through to an uncached call.
+     */
+    public function testGetCacheReturnsNullWhenNoneWasConfigured(): void
+    {
+        $this->assertNull($this->sdkProvider->getCache());
+    }
+
+    public function testGetCacheReturnsTheConfiguredInstance(): void
+    {
+        $cache = $this->createMock(CacheInterface::class);
+
+        $sdkProvider = new SdkProvider($this->settingsMock, null, $cache);
+
+        $this->assertSame($cache, $sdkProvider->getCache());
     }
 
     /**
@@ -242,10 +287,42 @@ class SdkProviderTest extends TestCase
         $this->assertTrue($wrapped->isRetryable());
     }
 
+    /**
+     * @dataProvider retryableHttpStatusCodeProvider
+     */
+    public function testWrapExceptionMarksPortalGatewayErrorsAsRetryable(int $statusCode): void
+    {
+        $wrapped = SdkProvider::wrapException(
+            new ApiException('Bad Gateway', $statusCode),
+            RefundException::class,
+            'refund',
+            ['spaceId' => 42],
+            'The payment service is temporarily unavailable.',
+        );
+
+        $this->assertTrue($wrapped->isRetryable());
+    }
+
     public function testWrapExceptionTreatsApiRejectionsAsTerminal(): void
     {
         $wrapped = SdkProvider::wrapException(
             new ApiException('Bad Request', 400),
+            RefundException::class,
+            'refund',
+            ['spaceId' => 42],
+            'The refund was rejected.',
+        );
+
+        $this->assertFalse($wrapped->isRetryable());
+    }
+
+    /**
+     * @dataProvider terminalHttpStatusCodeProvider
+     */
+    public function testWrapExceptionTreatsOtherHttpStatusCodesAsTerminal(int $statusCode): void
+    {
+        $wrapped = SdkProvider::wrapException(
+            new ApiException('Rejected', $statusCode),
             RefundException::class,
             'refund',
             ['spaceId' => 42],

@@ -28,6 +28,7 @@ use WeArePlanet\Sdk\Model\TokenVersion as SdkTokenVersion;
 trait TokenMapperTrait
 {
     use DateTimeMapperTrait;
+    use LabelMapperTrait;
 
     /**
      * Maps an SDK Token to a domain Token.
@@ -129,6 +130,7 @@ trait TokenMapperTrait
             paymentMethodId: $paymentMethodId !== null ? (int)$paymentMethodId : null,
             connectorConfigurationId: $connectorConfigurationId !== null ? (int)$connectorConfigurationId : null,
             paymentMethodConfigurationId: $paymentMethodConfigurationId !== null ? (int)$paymentMethodConfigurationId : null,
+            labels: $this->mapToLabels($sdkTokenVersion->getLabels()),
         );
     }
 }

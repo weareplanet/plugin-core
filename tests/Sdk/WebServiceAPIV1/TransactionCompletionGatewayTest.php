@@ -14,6 +14,8 @@ use WeArePlanet\PluginCore\Transaction\Completion\TransactionCompletion;
 use WeArePlanet\PluginCore\Transaction\Void\State as VoidState;
 use WeArePlanet\PluginCore\Transaction\Void\TransactionVoid;
 use WeArePlanet\Sdk\Model\FailureReason as SdkFailureReason;
+use WeArePlanet\Sdk\Model\Label as SdkLabel;
+use WeArePlanet\Sdk\Model\LabelDescriptor as SdkLabelDescriptor;
 use WeArePlanet\Sdk\Model\TransactionCompletion as SdkTransactionCompletion;
 use WeArePlanet\Sdk\Model\TransactionCompletionState;
 use WeArePlanet\Sdk\Model\TransactionVoid as SdkTransactionVoid;
@@ -90,6 +92,38 @@ class TransactionCompletionGatewayTest extends TestCase
         $this->assertEquals($transactionId, $result->linkedTransactionId);
         $this->assertEquals(State::SUCCESSFUL, $result->state);
         $this->assertNull($result->failureReason);
+    }
+
+    /**
+     * Verifies that reading a completion by ID maps its labels.
+     */
+    public function testGetMapsLabels(): void
+    {
+        $spaceId = 1;
+        $completionId = 10;
+
+        $descriptor = new SdkLabelDescriptor();
+        $descriptor->setId(1001);
+        $sdkLabel = new SdkLabel();
+        $sdkLabel->setDescriptor($descriptor);
+        $sdkLabel->setContentAsString('VISA');
+
+        $sdkCompletion = new SdkTransactionCompletion();
+        $sdkCompletion->setId($completionId);
+        $sdkCompletion->setLinkedTransaction(2);
+        $sdkCompletion->setState(TransactionCompletionState::SUCCESSFUL);
+        $sdkCompletion->setLabels([$sdkLabel]);
+
+        $this->completionService->expects($this->once())
+            ->method('read')
+            ->with($spaceId, $completionId)
+            ->willReturn($sdkCompletion);
+
+        $result = $this->gateway->get($spaceId, $completionId);
+
+        $this->assertCount(1, $result->labels);
+        $this->assertSame(1001, $result->labels[0]->descriptorId);
+        $this->assertSame('VISA', $result->labels[0]->content);
     }
 
     public function testVoidMapsFailureReason(): void

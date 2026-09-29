@@ -11,6 +11,7 @@ use WeArePlanet\PluginCore\GlobalData\Exception\GlobalDataException;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Sdk\SdkProvider;
 use WeArePlanet\PluginCore\Sdk\WebServiceAPIV1\GlobalDataGateway;
+use WeArePlanet\PluginCore\SharedKernel\CacheInterface;
 use WeArePlanet\Sdk\Model\LabelDescriptor as SdkLabelDescriptor;
 use WeArePlanet\Sdk\Model\LabelDescriptorGroup as SdkLabelDescriptorGroup;
 use WeArePlanet\Sdk\Model\PaymentConnector as SdkPaymentConnector;
@@ -201,6 +202,43 @@ class GlobalDataGatewayTest extends TestCase
         $this->assertNotNull($collection->findByCurrencyCode('CHF'));
     }
 
+    public function testCacheKeysAreUniquelyPrefixedWithWhitelabelmachinename(): void
+    {
+        $reflection = new \ReflectionClass(GlobalDataGateway::class);
+        $descriptorsKey = $reflection->getConstant('CACHE_KEY_LABEL_DESCRIPTORS');
+        $groupsKey = $reflection->getConstant('CACHE_KEY_LABEL_DESCRIPTOR_GROUPS');
+
+        $this->assertStringStartsWith('weareplanet:', $descriptorsKey);
+        $this->assertStringStartsWith('weareplanet:', $groupsKey);
+        $this->assertNotSame($descriptorsKey, $groupsKey);
+    }
+
+    public function testClearLabelDescriptorGroupsCacheDeletesTheCachedEntry(): void
+    {
+        $this->sdkProvider->method('getCache')->willReturn(new InMemoryCache());
+
+        $this->labelDescriptorGroupService->expects($this->exactly(2))
+            ->method('all')
+            ->willReturn([$this->makeSdkGroup(4, ['en-US' => 'Card'], 10)]);
+
+        $this->gateway->getLabelDescriptorGroups();
+        $this->gateway->clearLabelDescriptorGroupsCache();
+        $this->gateway->getLabelDescriptorGroups();
+    }
+
+    public function testClearLabelDescriptorsCacheDeletesTheCachedEntry(): void
+    {
+        $this->sdkProvider->method('getCache')->willReturn(new InMemoryCache());
+
+        $this->labelDescriptorService->expects($this->exactly(2))
+            ->method('all')
+            ->willReturn([$this->makeSdkDescriptor(1001, ['en-US' => 'Card Brand'], 4, 10, 'HUMAN', 2)]);
+
+        $this->gateway->getLabelDescriptors();
+        $this->gateway->clearLabelDescriptorsCache();
+        $this->gateway->getLabelDescriptors();
+    }
+
     #[DataProvider('operationProvider')]
     public function testEveryOperationCallsTheSdkWithNoParameters(string $sdkService, string $method): void
     {
@@ -295,6 +333,18 @@ class GlobalDataGatewayTest extends TestCase
         $this->assertSame(756, $chf->numericCode);
     }
 
+    public function testGetLabelDescriptorGroupsIsServedFromTheCacheOnASecondCall(): void
+    {
+        $this->sdkProvider->method('getCache')->willReturn(new InMemoryCache());
+
+        $this->labelDescriptorGroupService->expects($this->once())
+            ->method('all')
+            ->willReturn([$this->makeSdkGroup(4, ['en-US' => 'Card'], 10)]);
+
+        $this->gateway->getLabelDescriptorGroups();
+        $this->gateway->getLabelDescriptorGroups();
+    }
+
     public function testGetLabelDescriptorGroupsMapsEveryGroup(): void
     {
         $this->labelDescriptorGroupService->method('all')->willReturn([
@@ -306,6 +356,61 @@ class GlobalDataGatewayTest extends TestCase
         $this->assertNotNull($group);
         $this->assertSame('Card', $group->name->localize('en-US'));
         $this->assertSame(10, $group->weight);
+    }
+
+    // ---------------------------------------------------------------------
+    // Caching: opt-in, cache-aside for label descriptors and their groups
+    // ---------------------------------------------------------------------
+
+    public function testGetLabelDescriptorsFallsThroughToTheApiOnEveryCallWhenNoCacheIsConfigured(): void
+    {
+        // $this->sdkProvider is a plain mock; getCache() is left unstubbed and
+        // therefore returns null, exactly like a client that never configured one.
+        $this->labelDescriptorService->expects($this->exactly(2))
+            ->method('all')
+            ->willReturn([$this->makeSdkDescriptor(1001, ['en-US' => 'Card Brand'], 4, 10, 'HUMAN', 2)]);
+
+        $this->gateway->getLabelDescriptors();
+        $this->gateway->getLabelDescriptors();
+    }
+
+    public function testGetLabelDescriptorsForceRefreshBypassesAndRepopulatesTheCache(): void
+    {
+        $this->sdkProvider->method('getCache')->willReturn(new InMemoryCache());
+
+        $this->labelDescriptorService->expects($this->exactly(2))
+            ->method('all')
+            ->willReturnOnConsecutiveCalls(
+                [$this->makeSdkDescriptor(1001, ['en-US' => 'Card Brand'], 4, 10, 'HUMAN', 2)],
+                [$this->makeSdkDescriptor(1002, ['en-US' => 'Acquirer Reference'], 4, 10, 'HUMAN', 2)],
+            );
+
+        $this->gateway->getLabelDescriptors();
+        $this->gateway->setForceRefresh(true);
+        $refreshed = $this->gateway->getLabelDescriptors();
+        $this->gateway->setForceRefresh(false);
+        // A plain call afterwards must see the refreshed value, not the original
+        // one: forceRefresh repopulates the cache rather than only bypassing it.
+        $third = $this->gateway->getLabelDescriptors();
+
+        $this->assertNotNull($refreshed->findById(1002));
+        $this->assertNotNull($third->findById(1002));
+        $this->assertNull($third->findById(1001));
+    }
+
+    public function testGetLabelDescriptorsIsServedFromTheCacheOnASecondCall(): void
+    {
+        $this->sdkProvider->method('getCache')->willReturn(new InMemoryCache());
+
+        $this->labelDescriptorService->expects($this->once())
+            ->method('all')
+            ->willReturn([$this->makeSdkDescriptor(1001, ['en-US' => 'Card Brand'], 4, 10, 'HUMAN', 2)]);
+
+        $first = $this->gateway->getLabelDescriptors();
+        $second = $this->gateway->getLabelDescriptors();
+
+        $this->assertNotNull($first->findById(1001));
+        $this->assertNotNull($second->findById(1001));
     }
 
     public function testGetLabelDescriptorsMapsEveryDescriptor(): void
@@ -360,6 +465,38 @@ class GlobalDataGatewayTest extends TestCase
         $this->assertFalse($connector->deprecated);
     }
 
+    public function testLabelDescriptorsAndGroupsCacheUnderDifferentKeysAndDoNotCollide(): void
+    {
+        $cache = new InMemoryCache();
+        $this->sdkProvider->method('getCache')->willReturn($cache);
+
+        $this->labelDescriptorService->method('all')
+            ->willReturn([$this->makeSdkDescriptor(1001, ['en-US' => 'Card Brand'], 4, 10, 'HUMAN', 2)]);
+        $this->labelDescriptorGroupService->method('all')
+            ->willReturn([$this->makeSdkGroup(4, ['en-US' => 'Card'], 10)]);
+
+        $this->gateway->getLabelDescriptors();
+        $this->gateway->getLabelDescriptorGroups();
+
+        $this->assertCount(2, $cache->all());
+    }
+
+    public function testSetCacheTtlOverridesTheDefaultTtlUsedWhenCaching(): void
+    {
+        $cache = $this->createMock(CacheInterface::class);
+        $cache->method('get')->willReturn(null);
+        $cache->expects($this->once())
+            ->method('set')
+            ->with(self::anything(), self::anything(), 60);
+        $this->sdkProvider->method('getCache')->willReturn($cache);
+
+        $this->labelDescriptorService->method('all')
+            ->willReturn([$this->makeSdkDescriptor(1001, ['en-US' => 'Card Brand'], 4, 10, 'HUMAN', 2)]);
+
+        $this->gateway->setCacheTtl(60);
+        $this->gateway->getLabelDescriptors();
+    }
+
     public function testSuccessfulReadIsLoggedAtDebugAndNeverAtInfo(): void
     {
         // These are routine, high-frequency reads of static reference data. A
@@ -386,5 +523,85 @@ class GlobalDataGatewayTest extends TestCase
         $this->assertCount(1, $succeeded, 'Expected the success confirmation at debug level.');
         $this->assertSame(1, $succeeded[0][1]['count']);
         $this->assertArrayHasKey('operation', $succeeded[0][1]);
+    }
+}
+
+/**
+ * Minimal in-memory PSR-16 cache for exercising {@see \WeArePlanet\PluginCore\SharedKernel\CacheAwareTrait}
+ * against real get/set/delete behavior, rather than mocking each call individually.
+ */
+class InMemoryCache implements CacheInterface
+{
+    /** @var array<string, mixed> */
+    private array $items = [];
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function all(): array
+    {
+        return $this->items;
+    }
+
+    public function clear(): bool
+    {
+        $this->items = [];
+
+        return true;
+    }
+
+    public function delete(string $key): bool
+    {
+        unset($this->items[$key]);
+
+        return true;
+    }
+
+    public function deleteMultiple(iterable $keys): bool
+    {
+        foreach ($keys as $key) {
+            $this->delete($key);
+        }
+
+        return true;
+    }
+
+    public function get(string $key, mixed $default = null): mixed
+    {
+        return $this->items[$key] ?? $default;
+    }
+
+    public function getMultiple(iterable $keys, mixed $default = null): iterable
+    {
+        $result = [];
+        foreach ($keys as $key) {
+            $result[$key] = $this->get($key, $default);
+        }
+
+        return $result;
+    }
+
+    public function has(string $key): bool
+    {
+        return array_key_exists($key, $this->items);
+    }
+
+    public function set(string $key, mixed $value, null|int|\DateInterval $ttl = null): bool
+    {
+        $this->items[$key] = $value;
+
+        return true;
+    }
+
+    /**
+     * @param iterable<string, mixed> $values
+     */
+    public function setMultiple(iterable $values, null|int|\DateInterval $ttl = null): bool
+    {
+        foreach ($values as $key => $value) {
+            $this->set((string)$key, $value, $ttl);
+        }
+
+        return true;
     }
 }

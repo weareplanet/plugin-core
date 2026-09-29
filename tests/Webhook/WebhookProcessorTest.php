@@ -10,7 +10,7 @@ use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Webhook\Command\WebhookCommandInterface;
 use WeArePlanet\PluginCore\Webhook\Enum\WebhookListener;
 use WeArePlanet\PluginCore\Webhook\Exception\CommandException;
-use WeArePlanet\PluginCore\Webhook\Exception\TransientWebhookException;
+use WeArePlanet\PluginCore\Webhook\Exception\RetryableWebhookException;
 use WeArePlanet\PluginCore\Webhook\Listener\WebhookListenerInterface;
 use WeArePlanet\PluginCore\Webhook\Listener\WebhookListenerRegistry;
 use WeArePlanet\PluginCore\Webhook\StateFetcherInterface;
@@ -239,16 +239,16 @@ class WebhookProcessorTest extends TestCase
         $this->processor->process($this->requestMock);
     }
 
-    public function testTransientConditionIsLoggedWithItsReasonAndWithoutARawException(): void
+    public function testRetryableConditionIsLoggedWithItsReasonAndWithoutARawException(): void
     {
-        // A TransientWebhookException is a deliberately caught, self-healing condition.
+        // A RetryableWebhookException is a deliberately caught, self-healing condition.
         // Handing the raw Throwable to the logger makes backends render it with a
         // file-and-line fragment that reads like an unhandled error, so the reason goes
         // into the message instead and no 'exception' key is passed at this level.
         $reason = 'order 000000009 is not yet authorized - deferring capture for retry.';
 
         $command = $this->createMock(WebhookCommandInterface::class);
-        $command->method('execute')->willThrowException(new TransientWebhookException($reason));
+        $command->method('execute')->willThrowException(new RetryableWebhookException($reason));
         $listener = $this->createMock(WebhookListenerInterface::class);
         $listener->method('getCommand')->willReturn($command);
 
@@ -276,7 +276,7 @@ class WebhookProcessorTest extends TestCase
             $this->processor->process($this->requestMock);
             $this->fail('Expected a CommandException.');
         } catch (CommandException $e) {
-            // Expected: the transient branch still re-throws so the WeArePlanet Portal retries.
+            // Expected: the retryable branch still re-throws so the WeArePlanet Portal retries.
         }
 
         $delayed = array_values(array_filter(

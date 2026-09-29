@@ -11,8 +11,8 @@ use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\Webhook\Enum\WebhookListener as WebhookListenerEnum;
 use WeArePlanet\PluginCore\Webhook\Exception\CommandException;
+use WeArePlanet\PluginCore\Webhook\Exception\RetryableWebhookException;
 use WeArePlanet\PluginCore\Webhook\Exception\SkippedStepException;
-use WeArePlanet\PluginCore\Webhook\Exception\TransientWebhookException;
 use WeArePlanet\PluginCore\Webhook\Listener\WebhookListenerRegistry;
 
 #[LogContext(domain: 'webhook')]
@@ -175,7 +175,7 @@ class WebhookProcessor
             }
 
         } catch (\InvalidArgumentException $e) {
-            // Normalized for the same reason as the transient branch above: a rejected
+            // Normalized for the same reason as the retryable branch above: a rejected
             // payload is an expected outcome, not a fault to surface with a trace.
             $this->logger->warning(
                 'Webhook validation failed.',
@@ -186,8 +186,8 @@ class WebhookProcessor
                     'reason' => $e->getMessage(),
                 ],
             );
-        } catch (TransientWebhookException $e) {
-            // Transient Failure Hook: same recovery as the generic handler, but
+        } catch (RetryableWebhookException $e) {
+            // Retryable Failure Hook: same recovery as the generic handler, but
             // the consumer told us this is a temporary, self-healing state
             // (e.g. lock contention), so we log at info severity instead of error.
             if ($context && $webhookListener) {
@@ -199,7 +199,7 @@ class WebhookProcessor
             // business — including file-and-line fragments that read as a stack trace —
             // so nothing below error level relies on that.
             $this->logger->info(
-                'Webhook processing delayed: transient condition (will be retried).',
+                'Webhook processing delayed: retryable condition (will be retried).',
                 [
                     'entityId' => $entityId,
                     'spaceId' => $spaceId,
@@ -225,7 +225,7 @@ class WebhookProcessor
 
             // We re-throw as CommandException to signal the entry-point (Controller)
             // that it should return a 5xx error. This instructs the WeArePlanet Portal to
-            // retry the webhook later, which is essential for transient failures (DB/Network).
+            // retry the webhook later, which is essential for retryable failures (DB/Network).
             throw new CommandException(
                 "Webhook command execution failed for entity {$entityId} with listener {$technicalName} under space {$spaceId}.",
                 new LocalizedString('Webhook command execution failed.'),

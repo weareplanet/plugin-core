@@ -19,43 +19,23 @@ use WeArePlanet\Sdk\Model\ChargeAttempt as SdkChargeAttempt;
  */
 trait ChargeAttemptMapperTrait
 {
+    use LabelMapperTrait;
+
     /**
      * Maps an SDK ChargeAttempt to a domain ChargeAttempt.
      *
      * This API reports a label descriptor's group as a bare ID, so
-     * {@see Label::$groupName} is always null here. Labels whose descriptor is
-     * missing from the payload are skipped: without a descriptor ID they cannot be
-     * looked up by consumers.
+     * {@see Label::$groupName} is always null here.
      *
      * @param SdkChargeAttempt $sdkChargeAttempt The SDK charge attempt.
      * @return ChargeAttempt The mapped domain charge attempt.
      */
     protected function mapToChargeAttempt(SdkChargeAttempt $sdkChargeAttempt): ChargeAttempt
     {
-        $labels = [];
-
-        foreach ($sdkChargeAttempt->getLabels() ?? [] as $sdkLabel) {
-            $descriptor = $sdkLabel->getDescriptor();
-
-            if ($descriptor === null || $descriptor->getId() === null) {
-                continue;
-            }
-
-            $groupId = $descriptor->getGroup();
-
-            $labels[] = new Label(
-                (int)$descriptor->getId(),
-                (string)$sdkLabel->getContentAsString(),
-                $groupId !== null ? (string)$groupId : null,
-                // This API returns the group as a bare ID, so no name is available here.
-                null,
-            );
-        }
-
         return new ChargeAttempt(
             (int)$sdkChargeAttempt->getId(),
             (string)$sdkChargeAttempt->getState(),
-            $labels,
+            $this->mapToLabels($sdkChargeAttempt->getLabels()),
         );
     }
 }
