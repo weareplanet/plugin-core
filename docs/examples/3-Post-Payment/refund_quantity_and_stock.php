@@ -104,6 +104,12 @@ try {
 }
 
 if ($refundable->isEmpty()) {
+    // An empty list is only expected once the whole amount has been refunded.
+    $current = $transactionService->getTransaction($spaceId, $transactionId);
+    $remaining = $current->authorizedAmount - $current->refundedAmount;
+    if ($remaining > 0.001) {
+        exit("Inconsistent state: no refundable line items are reported, but $remaining is still refundable.\n");
+    }
     exit("Nothing left to refund on this transaction.\n");
 }
 

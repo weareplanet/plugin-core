@@ -58,8 +58,21 @@ try {
     if ($completion->failureReason !== null) {
         echo " > Failure Reason: " . $completion->failureReason->localize('en-US') . "\n";
     }
+
+    // null means the API did not report the captured line items.
+    if ($completion->lineItems === null) {
+        echo " > WARNING: the completion reports no line items.\n";
+    } else {
+        foreach ($completion->lineItems as $item) {
+            echo " > Captured: {$item->name} x{$item->quantity} = {$item->amountIncludingTax}\n";
+        }
+    }
 } catch (CompletionException $e) {
-    exit("\n[FAILED] " . $e->getMessage() . "\n");
+    echo "\n[FAILED] " . $e->getMessage() . "\n";
+    if ($e->getCode() === 404) {
+        echo "Hint: this script needs the completion ID printed by capture.php, not the transaction ID.\n";
+    }
+    exit(1);
 }
 
 // FIND: returns null instead of throwing when the completion does not exist.

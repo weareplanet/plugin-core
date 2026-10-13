@@ -12,19 +12,90 @@ use WeArePlanet\PluginCore\Log\LoggerInterface;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethod;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodCollection;
 use WeArePlanet\PluginCore\PaymentMethod\PaymentMethodSorting;
+use WeArePlanet\PluginCore\SharedKernel\RetryableOperation;
 use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
+use WeArePlanet\PluginCore\Transaction\Exception\TransactionNotConfirmableException;
 use WeArePlanet\PluginCore\Transaction\Exception\TransactionTotalNegativeException;
 
 #[LogContext(domain: 'transaction', subdomain: 'checkout')]
 class TransactionService
 {
     use DomainLoggerTrait;
+
+    /**
+     * Number of times a confirmation is attempted while it keeps failing with a retryable error.
+     */
+    private const CONFIRM_ATTEMPTS = 3;
+
+    /**
+     * Base pause between retry attempts, in milliseconds.
+     */
+    private const RETRY_DELAY_MS = 400;
+
+    /**
+     * Number of times an update is attempted while it keeps conflicting with another request.
+     */
+    private const UPDATE_ATTEMPTS = 5;
+
     public function __construct(
         private readonly TransactionGatewayInterface $gateway,
         private readonly LineItemConsistencyService $consistencyService,
         LoggerInterface $logger,
     ) {
         $this->initializeLogger($logger);
+    }
+
+    /**
+     * Confirms a PENDING transaction.
+     *
+     * This only confirms; it does not change the transaction's data. A shop that has to send its
+     * final order data first runs {@see upsert()} right before, and checks that the returned
+     * transaction has the ID it holds: a different ID means the transaction could not be updated
+     * and a new one was created, which must not be confirmed in its place.
+     *
+     * A transaction that is already CONFIRMED is returned as it is, which makes repeating the call
+     * safe. This includes the case where a confirmation went through but its response was lost.
+     * The transaction is read again before every attempt, and a retryable failure, such as a lost
+     * connection, is retried a few times.
+     *
+     * @param int $spaceId The space ID.
+     * @param int $transactionId The transaction ID.
+     * @return Transaction The confirmed transaction, read again after the confirmation.
+     * @throws TransactionNotConfirmableException If the transaction is neither PENDING nor CONFIRMED.
+     * @throws TransactionException If the confirmation fails, with the last failure once the attempts run out.
+     */
+    public function confirmTransaction(int $spaceId, int $transactionId): Transaction
+    {
+        return $this->retrying(self::CONFIRM_ATTEMPTS)->run(
+            function () use ($spaceId, $transactionId): Transaction {
+                $transaction = $this->gateway->get($spaceId, $transactionId);
+
+                if ($transaction->state === State::CONFIRMED) {
+                    return $transaction;
+                }
+
+                if ($transaction->state !== State::PENDING) {
+                    throw new TransactionNotConfirmableException(
+                        $transaction->state,
+                        "Transaction {$transactionId} in space {$spaceId} is {$transaction->state->value} and cannot be confirmed.",
+                        new LocalizedString("Transaction could not be confirmed."),
+                    );
+                }
+
+                $this->gateway->confirm($spaceId, $transactionId);
+
+                return $this->gateway->get($spaceId, $transactionId);
+            },
+            null,
+            function (\Throwable $e, int $attempt) use ($spaceId, $transactionId): void {
+                $this->logger->debug("Transaction confirmation failed with a retryable error.", [
+                    'transactionId' => $transactionId,
+                    'spaceId' => $spaceId,
+                    'attempt' => $attempt,
+                    'reason' => $e->getMessage(),
+                ]);
+            },
+        );
     }
 
     /**
@@ -199,6 +270,30 @@ class TransactionService
     }
 
     /**
+     * Waits before the next attempt.
+     *
+     * @param int $delayMs The pause, in milliseconds.
+     */
+    protected function pause(int $delayMs): void
+    {
+        usleep($delayMs * 1000);
+    }
+
+    /**
+     * Builds the retry loop, pausing through {@see pause()}.
+     *
+     * @param int $attempts Total number of tries, the first one included.
+     */
+    private function retrying(int $attempts): RetryableOperation
+    {
+        return new RetryableOperation(
+            $attempts,
+            self::RETRY_DELAY_MS,
+            fn (int $delayMs) => $this->pause($delayMs),
+        );
+    }
+
+    /**
      * Searches for transactions matching the criteria.
      *
      * @param int $spaceId The space ID.
@@ -211,61 +306,82 @@ class TransactionService
     }
 
     /**
-     * Updates an existing transaction.
+     * Updates the existing PENDING transaction, retrying updates that conflict with another request.
      *
-     * @param TransactionContext $context The transaction context.
-     * @return Transaction The updated transaction.
-     * @throws \Throwable If update fails.
+     * Each attempt re-reads the transaction so the update carries its current version.
+     *
+     * @param TransactionContext $context The desired transaction state.
+     * @return Transaction The updated transaction, or the original if the conflict persisted.
+     * @throws TransactionException If the transaction is not PENDING / not found.
+     * @throws \Throwable If the update fails for any reason other than a conflict.
      */
-    protected function updateTransaction(TransactionContext $context): Transaction
+    private function updatePendingTransaction(TransactionContext $context): Transaction
     {
+        // The sanitised context is the same on every attempt, so it is prepared once.
+        if (($context->expectedGrandTotal ?? 0.0) < -0.00000001) {
+            $context->lineItems = $this->consistencyService->sanitizeNegativeLineItems($context->lineItems->all());
+            $context->expectedGrandTotal = 0.0;
+        }
+
+        $existingTransaction = null;
+
         try {
-            $this->logger->debug("Updating transaction.", [
-                'transactionId' => $context->transactionId,
-                'spaceId' => $context->spaceId,
-            ]);
+            return $this->retrying(self::UPDATE_ATTEMPTS)->run(
+                function () use ($context, &$existingTransaction): Transaction {
+                    // READ: Returns a DOMAIN Object (Transaction)
+                    $existingTransaction = $this->gateway->find($context->spaceId, $context->transactionId);
 
-            // Consistency checks should ideally be done here too if line items change,
-            // but strict requirement says "add validation... wherever the TransactionContext is validated".
-            // Assuming consistency service call is desired if line items are present, but for now focusing on validation.
-            // Requirement: "This check should happen after the LineItemConsistencyService has been called to ensure the total is final."
-            // In createTransaction, consistency is called. In updateTransaction, it typically should be if line items are updated.
-            // Let's ensure validation is called.
+                    // CHECK: Use Domain Enum
+                    if (!$existingTransaction || $existingTransaction->state !== State::PENDING) {
+                        // Throwing here forces the catch block to trigger the fallback
+                        throw new TransactionException(
+                            "Transaction {$context->transactionId} in space {$context->spaceId} not PENDING or not found.",
+                            new LocalizedString("Transaction not PENDING or not found."),
+                        );
+                    }
 
-            $this->validateContext($context);
-
-            $existing = $this->gateway->find($context->spaceId, $context->transactionId);
-            if (!$existing) {
-                $this->logger->error("Update failed: transaction not found.", [
-                    'transactionId' => $context->transactionId,
-                    'spaceId' => $context->spaceId,
-                ]);
-                throw new TransactionException(
-                    "Transaction {$context->transactionId} in space {$context->spaceId} not found for update.",
-                    new LocalizedString("Transaction not found for update."),
-                );
+                    // WRITE: Pass Primitives (ID and Version)
+                    return $this->gateway->update(
+                        $existingTransaction->id,
+                        $existingTransaction->version,
+                        $context,
+                    );
+                },
+                static fn (\Throwable $e): bool => $e instanceof TransactionException && $e->isConflict(),
+                function (\Throwable $e, int $attempt) use ($context): void {
+                    $this->logger->info("Update conflicted with another request: retrying with fresh version.", [
+                        'transactionId' => $context->transactionId,
+                        'spaceId' => $context->spaceId,
+                        'attempts' => $attempt,
+                        'reason' => $e->getMessage(),
+                    ]);
+                },
+            );
+        } catch (TransactionException $e) {
+            // Anything but a persisting conflict is for the caller to handle.
+            if (!$e->isConflict() || $existingTransaction === null) {
+                throw $e;
             }
 
-            $result = $this->gateway->update($existing->id, $existing->version, $context);
+            $this->logger->warning("Update still conflicting with another request after all attempts: keeping existing transaction.", [
+                'transactionId' => $existingTransaction->id,
+                'spaceId' => $context->spaceId,
+                'attempts' => self::UPDATE_ATTEMPTS,
+                'reason' => $e->getMessage(),
+            ]);
 
-            $this->logger->debug("Transaction updated.", [
-                'transactionId' => $result->id,
-                'state' => $result->state->value,
-                'spaceId' => $context->spaceId,
-            ]);
-            return $result;
-        } catch (\Throwable $e) {
-            $this->logger->error("Transaction update failed.", [
-                'transactionId' => $context->transactionId,
-                'spaceId' => $context->spaceId,
-                'exception' => $e,
-            ]);
-            throw $e;
+            return $existingTransaction;
         }
     }
 
     /**
      * Upserts a transaction (Create or Update).
+     *
+     * An update that conflicts with another request is retried with the transaction's
+     * fresh version. If the conflict persists, the existing transaction is kept unchanged.
+     *
+     * Only if the transaction is no longer PENDING, cannot be found, or the update
+     * fails for any other reason does it fall back to creating a fresh one.
      *
      * @param TransactionContext $context The transaction context.
      * @param TransactionPersistenceInterface $persistenceStrategy The persistence strategy.
@@ -280,31 +396,11 @@ class TransactionService
             $result = $this->createTransaction($context);
         } else {
             try {
-                // READ: Returns a DOMAIN Object (Transaction)
-                $existingTransaction = $this->gateway->find($context->spaceId, $context->transactionId);
-
-                // CHECK: Use Domain Enum
-                if (!$existingTransaction || $existingTransaction->state !== State::PENDING) {
-                    // Throwing here forces the catch block to trigger the fallback
-                    throw new TransactionException(
-                        "Transaction {$context->transactionId} in space {$context->spaceId} not PENDING or not found.",
-                        new LocalizedString("Transaction not PENDING or not found."),
-                    );
-                }
-
-                if (($context->expectedGrandTotal ?? 0.0) < -0.00000001) {
-                    $context->lineItems = $this->consistencyService->sanitizeNegativeLineItems($context->lineItems->all());
-                    $context->expectedGrandTotal = 0.0;
-                }
-
-                // WRITE: Pass Primitives (ID and Version)
-                $result = $this->gateway->update(
-                    $existingTransaction->id,
-                    $existingTransaction->version,
-                    $context,
-                );
+                $result = $this->updatePendingTransaction($context);
             } catch (\Throwable $e) {
                 // Fallback Logic
+                // The transaction is no longer usable (not PENDING, not found, or the update
+                // failed for a reason other than a conflict), so we start a new session.
                 $this->logger->notice("Update failed; falling back to CREATE.", [
                     'transactionId' => $context->transactionId,
                     'spaceId' => $context->spaceId,

@@ -751,6 +751,7 @@ class TransactionGatewayTest extends TestCase
             $this->fail('Expected a TransactionException to be thrown.');
         } catch (TransactionException $e) {
             $this->assertTrue($e->isRetryable());
+            $this->assertFalse($e->isConflict(), 'A lost connection is not a conflict.');
         }
     }
 
@@ -764,6 +765,7 @@ class TransactionGatewayTest extends TestCase
             $this->fail('Expected a TransactionException to be thrown.');
         } catch (TransactionException $e) {
             $this->assertTrue($e->isRetryable());
+            $this->assertTrue($e->isConflict());
         }
     }
 }

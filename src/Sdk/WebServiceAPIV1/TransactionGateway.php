@@ -663,9 +663,10 @@ class TransactionGateway implements TransactionGatewayInterface
 
             // A version conflict means another process updated the transaction concurrently;
             // re-reading and retrying is expected to succeed. Connection failures are
-            // classified centrally in SdkProvider::wrapException().
+            // retryable too, but are classified centrally in SdkProvider::wrapException()
+            // and are not conflicts.
             if ($e instanceof VersioningException) {
-                $exception->withRetryable(true);
+                $exception->withConflict();
             }
 
             throw $exception;

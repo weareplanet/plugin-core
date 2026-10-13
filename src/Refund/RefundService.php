@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Refund;
 
+use WeArePlanet\PluginCore\GlobalData\Currency\CurrencyRoundingService;
 use WeArePlanet\PluginCore\LineItem\LineItem;
 use WeArePlanet\PluginCore\LineItem\LineItemCollection;
 use WeArePlanet\PluginCore\Localization\LocalizedString;
@@ -111,6 +112,7 @@ class RefundService
         return null;
     }
 
+
     /**
      * Returns the line items that are still refundable for a transaction.
      *
@@ -187,9 +189,11 @@ class RefundService
         $remainingAmount = $authorizedAmount - $refundedAmount;
 
         // Compare the request amount against the remaining balance.
-        // We use a strict comparison here as refund amounts are typically handled as exact values.
-
-        if ($context->amount > $remainingAmount) {
+        // Round both sides to the currency's precision to avoid float noise.
+        $currencyCode = $originalTransaction->currency ?? '';
+        if (CurrencyRoundingService::round($context->amount, $currencyCode)
+            > CurrencyRoundingService::round($remainingAmount, $currencyCode)
+        ) {
             $this->logger->error("Validation failed: refund amount exceeds the remaining authorized amount.", [
                 'transactionId' => $context->transactionId,
                 'requestedAmount' => $context->amount,
@@ -246,13 +250,15 @@ class RefundService
                 // (amountIncludingTax / quantity), which introduces floating-point rounding errors.
                 $itemTotalReduction = RefundCalculator::calculateReduction($originalItem, $refundItem);
 
-                if ($itemTotalReduction > $originalItem->amountIncludingTax + 0.01) {
+                if (CurrencyRoundingService::round($itemTotalReduction, $currencyCode)
+                    > CurrencyRoundingService::round($originalItem->amountIncludingTax, $currencyCode)
+                ) {
                     throw new InvalidRefundException(
                         sprintf(
-                            "Refund amount %.2f for item '%s' exceeds original item amount %.2f in transaction %d.",
-                            $itemTotalReduction,
+                            "Refund amount %s for item '%s' exceeds original item amount %s in transaction %d.",
+                            CurrencyRoundingService::format($itemTotalReduction, $currencyCode),
                             $uId,
-                            $originalItem->amountIncludingTax,
+                            CurrencyRoundingService::format($originalItem->amountIncludingTax, $currencyCode),
                             $originalTransaction->id,
                         ),
                         new LocalizedString("Refund amount exceeds original item amount."),
@@ -264,12 +270,12 @@ class RefundService
 
             // Consistency Check: Expected Total vs Context Total
             // Allow small float epsilon difference
-            if (abs($calculatedTotalReduction - $context->amount) > 0.01) {
+            if (!CurrencyRoundingService::areAmountsEqual($calculatedTotalReduction, $context->amount, $currencyCode)) {
                 throw new InvalidRefundException(
                     sprintf(
-                        "Consistency Error: Total provided refund amount (%.2f) does not match the sum of line item reductions (%.2f) for transaction %d.",
-                        $context->amount,
-                        $calculatedTotalReduction,
+                        "Consistency Error: Total provided refund amount (%s) does not match the sum of line item reductions (%s) for transaction %d.",
+                        CurrencyRoundingService::format($context->amount, $currencyCode),
+                        CurrencyRoundingService::format($calculatedTotalReduction, $currencyCode),
                         $originalTransaction->id,
                     ),
                     new LocalizedString("Total refund amount does not match the sum of line item reductions."),

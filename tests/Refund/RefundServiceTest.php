@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Tests\Refund;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use WeArePlanet\PluginCore\LineItem\LineItem;
@@ -29,6 +30,35 @@ class RefundServiceTest extends TestCase
     private MockObject|LoggerInterface $logger;
     private RefundService $service;
     private MockObject|TransactionService $transactionService;
+
+    private function kuwaitiDinarTransaction(int $transactionId, float $itemAmount): Transaction
+    {
+        $item = new LineItem();
+        $item->uniqueId = 'item-a';
+        $item->quantity = 1;
+        $item->amountIncludingTax = $itemAmount;
+        $item->unitPriceIncludingTax = $itemAmount;
+
+        $transaction = new Transaction();
+        $transaction->id = $transactionId;
+        $transaction->currency = 'KWD';
+        $transaction->authorizedAmount = 100.000;
+        $transaction->refundedAmount = 0.0;
+        $transaction->lineItems = [$item];
+
+        return $transaction;
+    }
+
+    /**
+     * @return array<string, array{float, float, float}>
+     */
+    public static function remainingAmountWithFloatNoiseProvider(): array
+    {
+        return [
+            '115.57 - 28.43' => [115.57, 28.43, 87.14],
+            '110.53 - 34.49' => [110.53, 34.49, 76.04],
+        ];
+    }
 
     protected function setUp(): void
     {
@@ -183,6 +213,48 @@ class RefundServiceTest extends TestCase
         $this->assertCount(1, $result);
         $this->assertSame($remainingItem, $result->first());
     }
+
+    public function testLineItemReductionExceedingOriginalByOneSubunitIsRejectedForThreeDecimalCurrency(): void
+    {
+        $this->transactionService->method('getTransaction')
+            ->willReturn($this->kuwaitiDinarTransaction(123, 10.000));
+        $this->gateway->expects($this->never())->method('refund');
+
+        $this->expectException(InvalidRefundException::class);
+        $this->expectExceptionMessage("Refund amount 10.005 for item 'item-a' exceeds original item amount 10.000 in transaction 123.");
+
+        // 10.005 KWD against a 10.000 KWD item: 5 fils too much.
+        $this->service->createRefund(1, new RefundContext(
+            transactionId: 123,
+            amount: 10.005,
+            merchantReference: 'ref-kwd-item',
+            type: Type::MERCHANT_INITIATED_ONLINE,
+            lineItems: new RefundLineItemCollection(
+                new RefundLineItem('item-a', 0, 10.005),
+            ),
+        ));
+    }
+
+    public function testLineItemSumDifferingFromTotalByOneSubunitIsRejectedForThreeDecimalCurrency(): void
+    {
+        $this->transactionService->method('getTransaction')
+            ->willReturn($this->kuwaitiDinarTransaction(123, 10.000));
+        $this->gateway->expects($this->never())->method('refund');
+
+        $this->expectException(InvalidRefundException::class);
+        $this->expectExceptionMessage('Total provided refund amount (5.005) does not match the sum of line item reductions (5.000)');
+
+        // Items reduce 5.000 KWD but the total claims 5.005 KWD: 5 fils apart.
+        $this->service->createRefund(1, new RefundContext(
+            transactionId: 123,
+            amount: 5.005,
+            merchantReference: 'ref-kwd-total',
+            type: Type::MERCHANT_INITIATED_ONLINE,
+            lineItems: new RefundLineItemCollection(
+                new RefundLineItem('item-a', 0, 5.000),
+            ),
+        ));
+    }
     public function testListRefunds(): void
     {
         $spaceId = 1;
@@ -277,6 +349,61 @@ class RefundServiceTest extends TestCase
         $this->expectExceptionMessage("Cannot refund line item 'free-1'. Items with zero or negative amounts cannot be refunded.");
 
         $this->service->createRefund($spaceId, $context);
+    }
+
+    public function testRefundOfExactRemainingAmountIsAcceptedForThreeDecimalCurrency(): void
+    {
+        $transaction = new Transaction();
+        $transaction->id = 123;
+        $transaction->currency = 'KWD';
+        $transaction->authorizedAmount = 115.570;
+        $transaction->refundedAmount = 28.430;
+
+        $this->transactionService->method('getTransaction')->willReturn($transaction);
+        $this->gateway->expects($this->once())->method('refund')->willReturn(new Refund());
+
+        $this->service->createRefund(1, new RefundContext(
+            transactionId: 123,
+            amount: 87.140,
+            merchantReference: 'ref-kwd-remaining',
+            type: Type::MERCHANT_INITIATED_ONLINE,
+        ));
+    }
+
+    #[DataProvider('remainingAmountWithFloatNoiseProvider')]
+    public function testRefundOfExactRemainingAmountIsNotRejectedByFloatPrecision(
+        float $authorizedAmount,
+        float $refundedAmount,
+        float $refundAmount,
+    ): void {
+        $spaceId = 1;
+        $transactionId = 123;
+
+        $transaction = new Transaction();
+        $transaction->id = $transactionId;
+        $transaction->authorizedAmount = $authorizedAmount;
+        $transaction->refundedAmount = $refundedAmount;
+
+        $this->transactionService->method('getTransaction')
+            ->willReturn($transaction);
+
+        $context = new RefundContext(
+            transactionId: $transactionId,
+            amount: $refundAmount,
+            merchantReference: 'ref-remaining',
+            type: Type::MERCHANT_INITIATED_ONLINE,
+        );
+
+        $expectedRefund = new Refund();
+        $expectedRefund->amount = $refundAmount;
+
+        $this->gateway->expects($this->once())
+            ->method('refund')
+            ->willReturn($expectedRefund);
+
+        $result = $this->service->createRefund($spaceId, $context);
+
+        $this->assertEquals($refundAmount, $result->amount);
     }
 
     public function testSuccessfulFullRefund(): void
@@ -407,6 +534,7 @@ class RefundServiceTest extends TestCase
         $this->service->createRefund($spaceId, $context);
     }
 
+
     public function testValidateRefundLineItemExceedsOriginal(): void
     {
         $spaceId = 1;
@@ -441,5 +569,4 @@ class RefundServiceTest extends TestCase
 
         $this->service->createRefund($spaceId, $context);
     }
-
 }

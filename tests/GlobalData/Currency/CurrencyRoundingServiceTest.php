@@ -45,6 +45,22 @@ class CurrencyRoundingServiceTest extends TestCase
     }
 
     /**
+     * @return array<string, array{0: float, 1: string, 2: string}>
+     */
+    public static function formatProvider(): array
+    {
+        return [
+            'EUR keeps 2 decimals' => [50.0, 'EUR', '50.00'],
+            'EUR rounds to 2 decimals' => [10.005, 'EUR', '10.01'],
+            'JPY has no decimals' => [1500.0, 'JPY', '1500'],
+            'KWD keeps 3 decimals' => [10.005, 'KWD', '10.005'],
+            'unknown currency defaults to 2 decimals' => [7.5, 'XYZ', '7.50'],
+            'no currency defaults to 2 decimals' => [7.5, '', '7.50'],
+            'no thousands grouping' => [1234567.891, 'EUR', '1234567.89'],
+        ];
+    }
+
+    /**
      * @return array<string, array{0: float, 1: string, 2: float}>
      */
     public static function roundProvider(): array
@@ -69,6 +85,12 @@ class CurrencyRoundingServiceTest extends TestCase
     public function testDecimalsFor(string $currencyCode, int $expectedDecimals): void
     {
         $this->assertSame($expectedDecimals, CurrencyRoundingService::decimalsFor($currencyCode));
+    }
+
+    #[DataProvider('formatProvider')]
+    public function testFormat(float $amount, string $currencyCode, string $expected): void
+    {
+        $this->assertSame($expected, CurrencyRoundingService::format($amount, $currencyCode));
     }
 
     #[DataProvider('roundProvider')]

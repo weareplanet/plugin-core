@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace WeArePlanet\PluginCore\Sdk\WebServiceAPIV1;
 
+use WeArePlanet\PluginCore\Localization\LocalizedString;
 use WeArePlanet\PluginCore\Log\DomainLoggerTrait;
 use WeArePlanet\PluginCore\Log\LogContext;
 use WeArePlanet\PluginCore\Log\LoggerInterface;
@@ -48,6 +49,16 @@ class InvoiceGateway implements InvoiceGatewayInterface
 
         try {
             $sdkInvoice = $this->transactionInvoiceService->read($spaceId, $invoiceId);
+
+            // The V1 API returns an empty model instead of a 404 for unknown IDs.
+            if ($sdkInvoice->getId() === null) {
+                $this->logger->debug('Gateway: Transaction invoice not found.', [
+                    'invoiceId' => $invoiceId,
+                    'spaceId' => $spaceId,
+                ]);
+                return null;
+            }
+
             return $this->mapToInvoice($sdkInvoice);
         } catch (\Throwable $e) {
             if ($e instanceof ApiException && $e->getCode() === 404) {
@@ -82,7 +93,18 @@ class InvoiceGateway implements InvoiceGatewayInterface
 
         try {
             $sdkInvoice = $this->transactionInvoiceService->read($spaceId, $invoiceId);
+
+            // The V1 API returns an empty model instead of a 404 for unknown IDs.
+            if ($sdkInvoice->getId() === null) {
+                throw new InvoiceException(
+                    "Transaction invoice {$invoiceId} not found in space {$spaceId}.",
+                    new LocalizedString('The transaction invoice could not be found.'),
+                );
+            }
+
             return $this->mapToInvoice($sdkInvoice);
+        } catch (InvoiceException $e) {
+            throw $e;
         } catch (\Throwable $e) {
             $this->logger->error('Gateway: Failed to read transaction invoice.', [
                 'exception' => $e,

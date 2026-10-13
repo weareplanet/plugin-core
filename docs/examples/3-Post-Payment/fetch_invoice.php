@@ -72,10 +72,16 @@ echo "\n[Invoiced Line Items]\n";
 foreach ($invoice->lineItems as $item) {
     echo " > {$item->name} x{$item->quantity} = {$item->amountIncludingTax}\n";
 }
+if ($invoice->lineItems->isEmpty()) {
+    echo " > WARNING: the invoice reports no line items, which is unexpected for a captured transaction.\n";
+}
 
 // GET: returns the invoice or throws an InvoiceException.
 $reloaded = $invoiceService->get($spaceId, $invoice->id);
-echo "\nRe-fetched invoice {$reloaded->id} via get().\n";
+echo "\nRe-fetched invoice {$reloaded->id} via get() with {$reloaded->lineItems->count()} line item(s).\n";
+if ($reloaded->lineItems->count() !== $invoice->lineItems->count()) {
+    echo " > WARNING: get() and search() report a different number of line items.\n";
+}
 
 // FIND: returns null instead of throwing when the invoice does not exist.
 $missing = $invoiceService->find($spaceId, 999999999);
