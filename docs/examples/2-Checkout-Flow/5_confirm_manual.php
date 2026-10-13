@@ -8,14 +8,17 @@ namespace MyPlugin\ExampleCheckoutImplementation;
  * IMPORTANT: This flow is NOT needed for the standard integration modes.
  * When using the Payment Page, Iframe, or Lightbox, the transaction is
  * confirmed IMPLICITLY as soon as the customer interacts with the payment
- * widget — your code never calls confirm().
+ * widget — your code never confirms it.
  *
- * Call confirm() explicitly ONLY for manual backend flows:
+ * Call TransactionService::confirmTransaction() explicitly ONLY when the shop
+ * confirms the transaction itself:
  *  - MOTO / Admin Panel orders, where a merchant creates the order on
  *    behalf of the customer and no payment widget is ever rendered.
- *  - Server-side race-condition safety: the gateway re-reads the
- *    transaction and confirms against its CURRENT version, so a concurrent
- *    modification fails fast instead of silently proceeding.
+ *  - Confirming at order placement, once the shop's order exists.
+ *
+ * confirmTransaction() only confirms. A shop that has to send its final order
+ * data first runs upsert() right before and checks that the returned transaction
+ * has the ID it holds (see docs/2-Checkout-Flow/Checkout.md).
  *
  * USAGE:
  * php 5_confirm_manual.php [transaction_id]
@@ -23,8 +26,11 @@ namespace MyPlugin\ExampleCheckoutImplementation;
  */
 
 use WeArePlanet\PluginCore\Examples\Common\TransactionIdLoader;
+use WeArePlanet\PluginCore\LineItem\LineItemConsistencyService;
 use WeArePlanet\PluginCore\Sdk\WebServiceAPIV2\TransactionGateway;
 use WeArePlanet\PluginCore\Transaction\Exception\TransactionException;
+use WeArePlanet\PluginCore\Transaction\Exception\TransactionNotConfirmableException;
+use WeArePlanet\PluginCore\Transaction\TransactionService;
 
 // 📖 Concept documentation: See docs/2-Checkout-Flow/Checkout.md
 
@@ -49,19 +55,25 @@ echo "Manually confirming Transaction ID: $transactionId\n";
 echo "(Backend/MOTO flow — no payment widget involved.)\n";
 
 $gateway = new TransactionGateway($sdkProvider, $logger, $settings);
+$consistency = new LineItemConsistencyService($settings, $logger);
+$service = new TransactionService($gateway, $consistency, $logger);
 
 try {
-    // The gateway reads the transaction first to obtain its current version,
-    // then confirms server-to-server. A concurrent modification between the
-    // read and the confirm makes the call fail fast (optimistic locking).
-    $transaction = $gateway->confirm($spaceId, $transactionId);
+    // Confirms the PENDING transaction and returns it, read again afterwards. A transaction that is
+    // already CONFIRMED is returned as it is, so repeating the call is safe. Conflicts with other
+    // requests and temporary connection errors are retried a few times.
+    $transaction = $service->confirmTransaction($spaceId, $transactionId);
 
     echo "\n[SUCCESS] Transaction confirmed.\n";
     echo " > ID: {$transaction->id}\n";
     echo " > State: {$transaction->state->value}\n";
+} catch (TransactionNotConfirmableException $e) {
+    // Neither PENDING nor CONFIRMED, for example already failed or voided. A shop would
+    // cancel its own order here.
+    echo "\n[FAILED] The transaction is {$e->state->value} and cannot be confirmed.\n";
+    echo "Localized: " . $e->getLocalizedMessage()->localize('en-US') . "\n";
+    exit(1);
 } catch (TransactionException $e) {
-    // Only pending transactions can be confirmed; already-confirmed or
-    // processed transactions will be rejected by the WeArePlanet Portal.
     echo "\n[FAILED] " . $e->getMessage() . "\n";
     echo "Localized: " . $e->getLocalizedMessage()->localize('en-US') . "\n";
     exit(1);

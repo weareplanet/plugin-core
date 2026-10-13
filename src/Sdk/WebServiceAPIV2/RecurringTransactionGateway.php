@@ -26,6 +26,10 @@ class RecurringTransactionGateway implements RecurringTransactionGatewayInterfac
 {
     use DomainLoggerTrait;
     use TransactionMapperTrait;
+    /**
+     * Related entities this API omits from a transaction unless they are expanded.
+     */
+    private const EXPAND = ['billingAddress', 'shippingAddress', 'lineItems', 'token'];
 
     /**
      * @var SdkTransactionsService The SDK transaction service.
@@ -83,6 +87,7 @@ class RecurringTransactionGateway implements RecurringTransactionGatewayInterfac
             $sdkTransaction = $this->transactionsService->getPaymentTransactionsId(
                 $transactionId,
                 $spaceId,
+                self::EXPAND,
             );
 
             return $this->mapToTransaction($sdkTransaction);

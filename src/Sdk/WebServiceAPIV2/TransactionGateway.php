@@ -58,6 +58,10 @@ class TransactionGateway implements TransactionGatewayInterface
     use PaymentMethodMapperTrait;
     use TransactionMapperTrait;
     use SearchPaginationTrait;
+    /**
+     * Related entities this API omits from a transaction unless they are expanded.
+     */
+    private const EXPAND = ['billingAddress', 'shippingAddress', 'lineItems', 'token'];
 
     private SdkPaymentMethodConfigurationsService $paymentMethodConfigService;
     private SdkTransactionsService $transactionsService;
@@ -217,7 +221,7 @@ class TransactionGateway implements TransactionGatewayInterface
     public function find(int $spaceId, int $transactionId): ?Transaction
     {
         try {
-            $sdkTransaction = $this->transactionsService->getPaymentTransactionsId($transactionId, $spaceId, ['billingAddress', 'shippingAddress', 'lineItems', 'token']);
+            $sdkTransaction = $this->transactionsService->getPaymentTransactionsId($transactionId, $spaceId, self::EXPAND);
             return $this->mapToTransaction($sdkTransaction);
         } catch (\Throwable $e) {
             if ($e instanceof ApiException && $e->getCode() === 404) {
@@ -258,7 +262,7 @@ class TransactionGateway implements TransactionGatewayInterface
         ]);
 
         try {
-            $sdkTransaction = $this->transactionsService->getPaymentTransactionsId($transactionId, $spaceId, ['billingAddress', 'shippingAddress', 'lineItems', 'token']);
+            $sdkTransaction = $this->transactionsService->getPaymentTransactionsId($transactionId, $spaceId, self::EXPAND);
             $result = $this->mapToTransaction($sdkTransaction);
 
             $this->logger->debug("Gateway: Transaction read.", [
@@ -651,9 +655,10 @@ class TransactionGateway implements TransactionGatewayInterface
 
             // HTTP 409 means another process updated the transaction concurrently (a version
             // conflict); re-reading and retrying is expected to succeed. Connection failures
-            // are classified centrally in SdkProvider::wrapException().
+            // are retryable too, but are classified centrally in SdkProvider::wrapException()
+            // and are not conflicts.
             if ($e instanceof ApiException && $e->getCode() === 409) {
-                $exception->withRetryable(true);
+                $exception->withConflict();
             }
 
             throw $exception;

@@ -39,6 +39,10 @@ class TransactionCompletionGateway implements TransactionCompletionGatewayInterf
     use FailureReasonMapperTrait;
     use LabelMapperTrait;
     use LineItemMapperTrait;
+    /**
+     * Related entities this API omits from a completion unless they are expanded.
+     */
+    private const EXPAND = ['labels', 'lineItems'];
 
     private SdkTransactionsService $transactionsService;
 
@@ -134,9 +138,8 @@ class TransactionCompletionGateway implements TransactionCompletionGatewayInterf
             /** @var SdkTransactionCompletionsService $service */
             $service = $this->sdkProvider->getService(SdkTransactionCompletionsService::class);
 
-            // V2: getPaymentTransactionsCompletionsId($id, $space, $expand). Labels
-            // are a related entity this API omits unless expanded.
-            $sdkCompletion = $service->getPaymentTransactionsCompletionsId($completionId, $spaceId, ['labels']);
+            // V2: getPaymentTransactionsCompletionsId($id, $space, $expand).
+            $sdkCompletion = $service->getPaymentTransactionsCompletionsId($completionId, $spaceId, self::EXPAND);
 
             // Defensive: treat an empty model (no ID) as not found as well.
             if ($sdkCompletion->getId() === null) {
@@ -191,9 +194,8 @@ class TransactionCompletionGateway implements TransactionCompletionGatewayInterf
             /** @var SdkTransactionCompletionsService $service */
             $service = $this->sdkProvider->getService(SdkTransactionCompletionsService::class);
 
-            // V2: getPaymentTransactionsCompletionsId($id, $space, $expand). Labels
-            // are a related entity this API omits unless expanded.
-            $sdkCompletion = $service->getPaymentTransactionsCompletionsId($completionId, $spaceId, ['labels']);
+            // V2: getPaymentTransactionsCompletionsId($id, $space, $expand).
+            $sdkCompletion = $service->getPaymentTransactionsCompletionsId($completionId, $spaceId, self::EXPAND);
 
             // Defensive: treat an empty model (no ID) as not found as well.
             if ($sdkCompletion->getId() === null) {

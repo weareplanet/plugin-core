@@ -20,7 +20,7 @@ One of the hardest problems in payment integration is handling browser navigatio
 
 * **Scenario:** A user clicks "Pay", goes to the payment page, realizes they forgot a coupon, hits "Back", adds the coupon, and clicks "Pay" again.
 * **Problem:** Naive integrations create a second transaction.
-* **Solution:** The **upsert** method. It attempts to **Update** the existing transaction associated with the cart. If that fails (or doesn't exist), it **Creates** a new one.
+* **Solution:** The **upsert** method. It **Updates** the existing transaction associated with the cart, and only **Creates** a new one when that transaction can no longer be updated. See [Modifying the Cart](#modifying-the-cart) for the exact rules.
 
 **3. Persistence Strategy**
 The library creates transactions, but it does not know where to store the resulting WeArePlanet Transaction ID (Session? Database? Cache?).
@@ -36,12 +36,34 @@ The engine supports multiple ways to present the payment form, controlled via **
 
 **5. Confirmation: Implicit vs Explicit**
 
-The standard integration modes (**Payment Page**, **Iframe**, **Lightbox**) confirm the transaction **implicitly**: when the customer interacts with the payment widget, the WeArePlanet Portal confirms and processes the transaction on its own — shop code never needs to call `confirm()`.
+The standard integration modes (**Payment Page**, **Iframe**, **Lightbox**) confirm the transaction **implicitly**: when the customer interacts with the payment widget, the WeArePlanet Portal confirms and processes the transaction on its own — shop code never needs to confirm it.
 
-The explicit `TransactionGatewayInterface::confirm($spaceId, $transactionId)` method is reserved for flows **without** a customer-facing widget:
+Explicit confirmation with `TransactionService::confirmTransaction($spaceId, $transactionId)` is for flows where the shop confirms the transaction itself:
 
-* **Manual creation** — MOTO / backend admin orders placed by a merchant on behalf of the customer.
-* **Server-side race-condition safety** — the gateway re-reads the transaction and confirms against its current version, so a concurrent modification fails fast instead of silently proceeding.
+* **Manual creation** — MOTO / backend admin orders placed by a merchant on behalf of the customer, where no payment widget is shown.
+* **Confirming at order placement** — the shop locks the transaction once its order exists.
+
+The method only confirms; it never changes the transaction's data, and it returns the confirmed transaction, read again after the confirmation. Once a transaction is confirmed its data can no longer be changed, so a shop that has to send its final order data (for example the order number) does it first, with `upsert()` right before confirming:
+
+```php
+$transaction = $transactionService->upsert($context, $persistence);
+
+if ($transaction->id !== $transactionId) {
+    // The transaction could not be updated and a new one was created. Do not confirm it
+    // in place of the one the customer is paying: treat the checkout as failed.
+}
+
+$transactionService->confirmTransaction($spaceId, $transaction->id);
+```
+
+Compare the returned ID before confirming: `upsert()` creates a new transaction when the existing one is no longer `PENDING`, for example because a double submit already confirmed it.
+
+* **Already `CONFIRMED`:** the transaction is returned unchanged, so repeating the call is safe, also after a confirmation whose response was lost.
+* **Neither `PENDING` nor `CONFIRMED`:** a `TransactionNotConfirmableException` is thrown. Its `state` property holds the state the transaction was found in, so the shop can cancel its own order.
+* **Conflicts with other requests and temporary connection errors:** the transaction is read again and the confirmation is retried, up to three attempts. If none succeeds, the last failure is thrown as a `TransactionException`.
+* **Any other failure:** it is thrown as a `TransactionException` at once, without retrying.
+
+`TransactionNotConfirmableException` extends `TransactionException`.
 
 ### Custom UI Rendering
 
@@ -167,6 +189,16 @@ Once a transaction exists, the [Upsert Strategy](#core-concepts) above lets you 
 
 👉 **See this in action:** [4_modify_cart.php](../examples/2-Checkout-Flow/4_modify_cart.php), which re-reads a session's transaction and updates its line items.
 
+### What `upsert()` does with an existing transaction
+
+A transaction's data can only be changed while it is `PENDING`, before it is confirmed. `upsert()` follows these rules:
+
+* **The transaction is `PENDING`:** it is updated in place and the same transaction is returned.
+* **Another request changes the transaction at the same moment:** this happens when several requests of one checkout run in parallel (for example while the customer picks a shipping method). `upsert()` reads the transaction again and retries a few times, and does **not** create a second transaction. If the conflict persists, the existing transaction is returned unchanged, so the changes of that call are not applied. The next call, or the confirmation step, sends the current cart again.
+* **The transaction is no longer `PENDING`, cannot be found, or the update is rejected for another reason:** a new transaction is created and its ID is passed to your `TransactionPersistenceInterface`.
+
+Compare the returned transaction's ID with the one you had before: when it differs, a new transaction was created. Anything already shown to the customer for the old one, such as an Iframe or Lightbox, must be loaded again with the new transaction.
+
 ## Available Payment Methods
 
 To find out which payment methods a customer can actually use for a given transaction, use `TransactionService::getAvailablePaymentMethods()`:
@@ -195,7 +227,7 @@ With a transaction created (and optionally modified), and the [available payment
 * **Payment Page** — see [5_confirm_payment_page.php](../examples/2-Checkout-Flow/5_confirm_payment_page.php).
 * **Iframe** — see [5_confirm_iframe.php](../examples/2-Checkout-Flow/5_confirm_iframe.php).
 * **Lightbox** — see [5_confirm_lightbox.php](../examples/2-Checkout-Flow/5_confirm_lightbox.php).
-* **Manual / explicit `confirm()`** (MOTO, backend admin orders) — see [5_confirm_manual.php](../examples/2-Checkout-Flow/5_confirm_manual.php). Confirming alone does not charge the transaction; without a widget to trigger it implicitly, you must also apply its [charge flow](Charge.md#when-you-do-need-applyflow-explicit-flows) explicitly.
+* **Manual / explicit `confirmTransaction()`** (MOTO, backend admin orders) — see [5_confirm_manual.php](../examples/2-Checkout-Flow/5_confirm_manual.php). Confirming alone does not charge the transaction; without a widget to trigger it implicitly, you must also apply its [charge flow](Charge.md#when-you-do-need-applyflow-explicit-flows) explicitly.
 * **Custom UI** (a reactive frontend built on [IntegratedPaymentRenderService](#custom-ui-rendering)) — see [5_confirm_custom_ui.php](../examples/2-Checkout-Flow/5_confirm_custom_ui.php).
 
 ## Context Used by a Transaction
@@ -250,7 +282,7 @@ sequenceDiagram
     
     alt Existing ID Found in Session
         PluginCore->>WeArePlanetAPI: Update Transaction
-    else No ID or Update Failed
+    else No ID, or the transaction can no longer be updated
         PluginCore->>WeArePlanetAPI: Create Transaction
         PluginCore->>ShopController: Call Persistence->persist(NewID)
     end

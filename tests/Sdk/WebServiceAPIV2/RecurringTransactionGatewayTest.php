@@ -63,7 +63,7 @@ class RecurringTransactionGatewayTest extends TestCase
         // Step 2: getPaymentTransactionsId is called to fetch the updated transaction
         $this->transactionService->expects($this->once())
             ->method('getPaymentTransactionsId')
-            ->with($transactionId, $spaceId)
+            ->with($transactionId, $spaceId, ['billingAddress', 'shippingAddress', 'lineItems', 'token'])
             ->willReturn($sdkTransaction);
 
         $result = $this->gateway->processRecurringPayment($spaceId, $transactionId);
@@ -117,7 +117,7 @@ class RecurringTransactionGatewayTest extends TestCase
 
         $this->transactionService->expects($this->once())
             ->method('getPaymentTransactionsId')
-            ->with($transactionId, $spaceId)
+            ->with($transactionId, $spaceId, ['billingAddress', 'shippingAddress', 'lineItems', 'token'])
             ->willReturn($sdkTransaction);
 
         $result = $this->gateway->processRecurringPayment($spaceId, $transactionId);

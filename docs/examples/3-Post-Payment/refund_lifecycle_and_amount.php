@@ -11,6 +11,8 @@ namespace MyPlugin\ExampleRefundImplementation;
  * - Creates a full refund of the remaining transaction balance.
  * - Fetches a single refund by ID (simulating a webhook processor lookup).
  * - Lists existing refunds and remaining refundable line items.
+ * - Checks that the remaining refundable line items are still reported after a partial refund,
+ *   and ends with a verdict (non-zero exit code if any check failed).
  * 
  * NOTE: For quantity-based partial refunds where physical units of stock are being returned,
  * see refund_quantity_and_stock.php.
@@ -94,13 +96,27 @@ $refundService = new RefundService(
 
 // ... (previous code)
 
+// Problems found by the checks below; the script reports them at the end.
+$problems = [];
+
+// Records a check, so a missing piece of data fails loudly instead of printing an empty result.
+function expect(array &$problems, bool $condition, string $passMessage, string $failMessage): void
+{
+    if ($condition) {
+        echo " > CHECK OK: $passMessage\n";
+        return;
+    }
+    echo " > CHECK FAILED: $failMessage\n";
+    $problems[] = $failMessage;
+}
+
 // Helper to list refunds
 function list_refunds($service, $spaceId, $transactionId)
 {
     echo "\nFetching Refunds for Transaction $transactionId...\n";
     try {
         $refunds = $service->getRefunds((int)$spaceId, $transactionId);
-        if (empty($refunds)) {
+        if ($refunds->isEmpty()) {
             echo " > No refunds found.\n";
             return;
         }
@@ -146,10 +162,12 @@ $context = new RefundContext(
 try {
     $refundService->createRefund((int)$spaceId, $context);
     echo "FAILED: Expected InvalidRefundException was NOT thrown.\n";
+    $problems[] = 'The over-refund was not rejected.';
 } catch (InvalidRefundException $e) {
     echo "SUCCESS: Caught expected validation error: " . $e->getMessage() . "\n";
 } catch (\Exception $e) {
     echo "FAILED: Caught unexpected exception: " . $e->getMessage() . "\n";
+    $problems[] = $e->getMessage();
 }
 
 // TEST: Partial Refund as a price-reduction adjustment (no stock returned)
@@ -170,7 +188,7 @@ if (!$targetItem) {
 } else {
     // Determine how many we can refund/reduce
     $qty = $targetItem->quantity;
-    echo "Found Swtich Watch with Quantity: $qty\n";
+    echo "Found Swiss Watch with Quantity: $qty\n";
 
     // We want to reduce the unit price by 10.00.
     // Total Refund Amount = Quantity * UnitReduction
@@ -198,8 +216,21 @@ if (!$targetItem) {
         echo "SUCCESS: Partial Refund Created. ID: " . $refund->id . ", State: " . $refund->state->value . "\n";
         $lastRefundId = $refund->id;
         list_refunds($refundService, $spaceId, $transactionId);
+
+        // A second partial refund starts from this state, so it must be reported
+        // for as long as part of the balance is still refundable.
+        $afterFirst = $transactionService->getTransaction((int)$spaceId, $transactionId);
+        $stillOpen = $afterFirst->authorizedAmount - $afterFirst->refundedAmount > 0.001;
+        $refundableAfter = $refundService->getRefundableLineItems((int)$spaceId, $transactionId);
+        expect(
+            $problems,
+            !$stillOpen || !$refundableAfter->isEmpty(),
+            "Refundable line items are still reported after the first partial refund ({$refundableAfter->count()}).",
+            "Part of the balance is still open, but no refundable line items are reported.",
+        );
     } catch (\Exception $e) {
         echo "FAILED: " . $e->getMessage() . "\n";
+        $problems[] = $e->getMessage();
     }
 }
 
@@ -224,6 +255,7 @@ if ($remaining > 0) {
         $lastRefundId = $refund->id;
     } catch (\Exception $e) {
         echo "FAILED: " . $e->getMessage() . "\n";
+        $problems[] = $e->getMessage();
     }
 } else {
     echo "No remaining amount to refund.\n";
@@ -238,11 +270,15 @@ if (isset($lastRefundId)) {
         echo "SUCCESS: Fetched Refund $lastRefundId directly.\n";
         echo " > Transaction ID: {$refund->transactionId} (resolved from the API payload)\n";
         echo " > Amount: {$refund->amount}, State: {$refund->state->value}\n";
+        // null means the API did not report it; an empty list means it reported none.
+        echo " > Line items:         " . ($refund->lineItems === null ? 'not reported' : count($refund->lineItems)) . "\n";
+        echo " > Reduced line items: " . ($refund->reducedLineItems === null ? 'not reported' : count($refund->reducedLineItems)) . "\n";
         foreach ($refund->lineItems ?? [] as $item) {
             echo " > Refunded item: {$item->name} ({$item->amountIncludingTax})\n";
         }
     } catch (\Exception $e) {
         echo "FAILED: " . $e->getMessage() . "\n";
+        $problems[] = $e->getMessage();
     }
 } else {
     echo "SKIPPED: No refund was created in the previous steps.\n";
@@ -253,12 +289,32 @@ if (isset($lastRefundId)) {
 echo "\n--- TEST 5: Remaining Refundable Line Items ---\n";
 try {
     $refundable = $refundService->getRefundableLineItems((int)$spaceId, $transactionId);
+    $finalState = $transactionService->getTransaction((int)$spaceId, $transactionId);
+    $remainingAmount = $finalState->authorizedAmount - $finalState->refundedAmount;
     if ($refundable->isEmpty()) {
         echo " > Nothing left to refund.\n";
     }
     foreach ($refundable as $item) {
         echo " > Refundable: {$item->name} ({$item->amountIncludingTax}, qty {$item->quantity})\n";
     }
+    expect(
+        $problems,
+        !$refundable->isEmpty() || $remainingAmount <= 0.001,
+        "The refundable line items agree with the remaining amount ($remainingAmount).",
+        "No refundable line items are reported, but $remainingAmount is still refundable.",
+    );
 } catch (\Exception $e) {
     echo "FAILED: " . $e->getMessage() . "\n";
+    $problems[] = $e->getMessage();
 }
+
+echo "\n--- RESULT ---\n";
+if ($problems === []) {
+    echo "All checks passed.\n";
+    exit(0);
+}
+echo count($problems) . " problem(s) found:\n";
+foreach ($problems as $problem) {
+    echo " - $problem\n";
+}
+exit(1);

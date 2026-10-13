@@ -96,6 +96,16 @@ That formula needs a per-unit price. Do **not** derive it as `$lineItem->amountI
 
 👉 **See this in action:** [refund_quantity_and_stock.php](../examples/3-Post-Payment/refund_quantity_and_stock.php)
 
+### Amounts Are Checked at the Currency's Precision
+
+Before calling the API, PluginCore validates the request locally. Amounts are compared after rounding to the number of decimals the transaction's currency uses (2 for EUR, 0 for JPY, 3 for KWD), so floating-point noise never matters, but a real difference of one smallest unit does:
+
+- `RefundContext::$amount` may equal the remaining refundable amount (authorized minus already refunded). Anything above it is rejected.
+- A line item's reduction may not exceed that item's original amount.
+- `RefundContext::$amount` must equal the sum of the line item reductions.
+
+Each violation throws an `InvalidRefundException`. If the transaction reports no currency, 2 decimals are assumed.
+
 ## Errors
 
 - **`InvalidRefundException`**: The request violated a business rule and was rejected locally, before any API call.

@@ -19,6 +19,7 @@ use WeArePlanet\Sdk\ApiException;
 use WeArePlanet\Sdk\Model\FailureReason as SdkFailureReason;
 use WeArePlanet\Sdk\Model\Label as SdkLabel;
 use WeArePlanet\Sdk\Model\LabelDescriptor as SdkLabelDescriptor;
+use WeArePlanet\Sdk\Model\LineItem as SdkLineItem;
 use WeArePlanet\Sdk\Model\Refund as SdkRefund;
 use WeArePlanet\Sdk\Model\RefundCreate as SdkRefundCreate;
 use WeArePlanet\Sdk\Model\RefundSearchResponse as SdkRefundSearchResponse;
@@ -76,7 +77,7 @@ class RefundGatewayTest extends TestCase
         // V2: getPaymentRefundsSearch($space, filter, limit, offset, order, query)
         $this->refundService->expects($this->once())
             ->method('getPaymentRefundsSearch')
-            ->with($spaceId, ['labels'], 100, 0, null, "transaction.id:$transactionId")
+            ->with($spaceId, ['labels', 'lineItems', 'reducedLineItems'], 100, 0, null, "transaction.id:$transactionId")
             ->willReturn($this->searchResponse([$sdkRefund]));
 
         $results = $this->gateway->findByTransaction($spaceId, $transactionId, );
@@ -114,6 +115,100 @@ class RefundGatewayTest extends TestCase
         $this->assertCount(1, $result->labels);
         $this->assertSame(1001, $result->labels[0]->descriptorId);
         $this->assertSame('VISA', $result->labels[0]->content);
+    }
+
+    private function sdkLineItem(string $uniqueId, float $amountIncludingTax): SdkLineItem
+    {
+        $item = new SdkLineItem();
+        $item->setUniqueId($uniqueId);
+        $item->setSku($uniqueId);
+        $item->setName($uniqueId);
+        $item->setQuantity(1.0);
+        $item->setAmountIncludingTax($amountIncludingTax);
+        $item->setUnitPriceIncludingTax($amountIncludingTax);
+
+        return $item;
+    }
+
+    public function testFindByTransactionMapsLineItemsAndReducedLineItems(): void
+    {
+        $sdkRefund = new SdkRefund();
+        $sdkRefund->setId(12);
+        $sdkRefund->setAmount(10.0);
+        $sdkRefund->setExternalId('ext-12');
+        $sdkRefund->setState(SdkRefundState::SUCCESSFUL);
+        $sdkRefund->setLineItems([$this->sdkLineItem('product-1', 10.0)]);
+        $sdkRefund->setReducedLineItems([
+            $this->sdkLineItem('product-1', 40.0),
+            $this->sdkLineItem('product-2', 25.0),
+        ]);
+
+        $this->refundService->method('getPaymentRefundsSearch')
+            ->willReturn($this->searchResponse([$sdkRefund]));
+
+        $result = $this->gateway->findByTransaction(1, 2)->first();
+
+        $this->assertCount(1, $result->lineItems);
+        $this->assertSame('product-1', $result->lineItems->first()->uniqueId);
+        $this->assertCount(2, $result->reducedLineItems);
+        $this->assertSame(['product-1', 'product-2'], array_map(
+            static fn ($item) => $item->uniqueId,
+            $result->reducedLineItems->all(),
+        ));
+    }
+
+    public function testFindByTransactionKeepsReducedLineItemsNullWhenTheApiDoesNotReportThem(): void
+    {
+        $sdkRefund = new SdkRefund();
+        $sdkRefund->setId(13);
+        $sdkRefund->setAmount(10.0);
+        $sdkRefund->setExternalId('ext-13');
+        $sdkRefund->setState(SdkRefundState::SUCCESSFUL);
+
+        $this->refundService->method('getPaymentRefundsSearch')
+            ->willReturn($this->searchResponse([$sdkRefund]));
+
+        $result = $this->gateway->findByTransaction(1, 2)->first();
+
+        $this->assertNull($result->lineItems);
+        $this->assertNull($result->reducedLineItems);
+    }
+
+    public function testFindByTransactionMapsAnEmptyReducedStateAsEmptyNotNull(): void
+    {
+        $sdkRefund = new SdkRefund();
+        $sdkRefund->setId(14);
+        $sdkRefund->setAmount(10.0);
+        $sdkRefund->setExternalId('ext-14');
+        $sdkRefund->setState(SdkRefundState::SUCCESSFUL);
+        $sdkRefund->setReducedLineItems([]);
+
+        $this->refundService->method('getPaymentRefundsSearch')
+            ->willReturn($this->searchResponse([$sdkRefund]));
+
+        $result = $this->gateway->findByTransaction(1, 2)->first();
+
+        $this->assertNotNull($result->reducedLineItems);
+        $this->assertCount(0, $result->reducedLineItems);
+    }
+
+    public function testFindByIdExpandsLabelsAndLineItems(): void
+    {
+        $sdkRefund = new SdkRefund();
+        $sdkRefund->setId(15);
+        $sdkRefund->setAmount(10.0);
+        $sdkRefund->setExternalId('ext-15');
+        $sdkRefund->setState(SdkRefundState::SUCCESSFUL);
+        $sdkRefund->setReducedLineItems([$this->sdkLineItem('product-1', 40.0)]);
+
+        $this->refundService->expects($this->once())
+            ->method('getPaymentRefundsId')
+            ->with(15, 1, ['labels', 'lineItems', 'reducedLineItems'])
+            ->willReturn($sdkRefund);
+
+        $result = $this->gateway->findById(1, 15);
+
+        $this->assertCount(1, $result->reducedLineItems);
     }
 
     /**

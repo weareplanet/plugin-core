@@ -40,7 +40,9 @@ use WeArePlanet\Sdk\Service\TransactionsService as SdkTransactionsService;
  * - The active-version lookup lives on the tokens service while reading a version
  *   by ID lives on the token versions service, so this gateway holds both.
  * - Related entities are only present in a payload when requested with `expand`,
- *   so the lookups ask for the owning token and the version's labels explicitly.
+ *   so the lookups ask for the owning token, the version's labels and its connector
+ *   configuration (which carries the connector and payment method configuration IDs)
+ *   explicitly.
  *
  * Converting SDK models into domain entities is {@see TokenMapperTrait}'s job —
  * including the payload-shape differences behind those entities; this class owns
@@ -51,6 +53,10 @@ class TokenGateway implements TokenGatewayInterface
 {
     use DomainLoggerTrait;
     use TokenMapperTrait;
+    /**
+     * Related entities this API omits from a token version unless they are expanded.
+     */
+    private const VERSION_EXPAND = ['token', 'labels', 'paymentConnectorConfiguration'];
 
     private SdkTokensService $tokensService;
     private SdkTokenVersionsService $tokenVersionsService;
@@ -256,7 +262,7 @@ class TokenGateway implements TokenGatewayInterface
         try {
             // Argument order reversed for this SDK: token first, space second. Related
             // entities are only present in the payload when requested via expand.
-            $result = $this->tokensService->getPaymentTokensIdActiveVersion($tokenId, $spaceId, ['token', 'labels']);
+            $result = $this->tokensService->getPaymentTokensIdActiveVersion($tokenId, $spaceId, self::VERSION_EXPAND);
         } catch (\Throwable $e) {
             if ($e instanceof ApiException && $e->getCode() === 404) {
                 // Absence is an ordinary answer for this lookup, not a failure.
@@ -307,7 +313,7 @@ class TokenGateway implements TokenGatewayInterface
             $result = $this->tokenVersionsService->getPaymentTokenVersionsId(
                 $tokenVersionId,
                 $spaceId,
-                ['token', 'labels'],
+                self::VERSION_EXPAND,
             );
         } catch (\Throwable $e) {
             if ($e instanceof ApiException && $e->getCode() === 404) {

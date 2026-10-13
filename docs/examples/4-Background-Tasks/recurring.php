@@ -103,6 +103,10 @@ try {
     echo "---------------------------------------------------\n";
     echo "New Transaction ID: " . $newTransaction->id . "\n";
     echo "New State:          " . $newTransaction->state->value . "\n";
+    echo "Line items:         " . count($newTransaction->lineItems) . "\n";
+    if ($newTransaction->lineItems === []) {
+        echo "WARNING: the new transaction reports no line items.\n";
+    }
     // The failure reason is now preserved on recurring charges that resolve to FAILED.
     if ($newTransaction->failureReason !== null) {
         echo "Failure Reason:     " . $newTransaction->failureReason->localize('en-US') . "\n";

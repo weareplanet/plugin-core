@@ -86,4 +86,19 @@ final class CurrencyRoundingService
     {
         return abs(self::round($amount1, $currencyCode) - self::round($amount2, $currencyCode)) < 0.000001;
     }
+
+    /**
+     * Formats an amount with the number of decimal places the given currency uses.
+     *
+     * The output is plain text meant for logs and error messages: '.' as the decimal
+     * separator, no thousands grouping and no currency symbol. It is not a
+     * customer-facing, localized format.
+     *
+     * @param float $amount The amount to format.
+     * @param string $currencyCode A 3-letter ISO 4217 currency code (e.g. 'EUR', 'JPY').
+     */
+    public static function format(float $amount, string $currencyCode): string
+    {
+        return number_format($amount, self::decimalsFor($currencyCode), '.', '');
+    }
 }

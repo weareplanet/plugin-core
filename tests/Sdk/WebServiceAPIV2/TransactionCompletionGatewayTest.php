@@ -177,7 +177,7 @@ class TransactionCompletionGatewayTest extends TestCase
 
         $this->transactionCompletionsService->expects($this->once())
             ->method('getPaymentTransactionsCompletionsId')
-            ->with($completionId, $spaceId, ['labels'])
+            ->with($completionId, $spaceId, ['labels', 'lineItems'])
             ->willReturn($sdkCompletion);
 
         $result = $this->gateway->get($spaceId, $completionId);
@@ -237,5 +237,20 @@ class TransactionCompletionGatewayTest extends TestCase
         $this->assertEquals(VoidState::FAILED, $result->state);
         $this->assertNotNull($result->failureReason);
         $this->assertEquals('Void rejected by gateway', $result->failureReason->localize('en-US'));
+    }
+
+    public function testFindExpandsLabelsAndLineItems(): void
+    {
+        $sdkCompletion = new SdkTransactionCompletion();
+        $sdkCompletion->setId(5);
+        $sdkCompletion->setLinkedTransaction(2);
+        $sdkCompletion->setState(SdkTransactionCompletionState::SUCCESSFUL);
+
+        $this->transactionCompletionsService->expects($this->once())
+            ->method('getPaymentTransactionsCompletionsId')
+            ->with(5, 1, ['labels', 'lineItems'])
+            ->willReturn($sdkCompletion);
+
+        $this->assertNotNull($this->gateway->find(1, 5));
     }
 }

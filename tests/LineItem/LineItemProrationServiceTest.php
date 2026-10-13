@@ -145,4 +145,19 @@ class LineItemProrationServiceTest extends TestCase
         $this->assertSame(40.00, $result[0]->amountIncludingTax);
         $this->assertSame(10.00, $result[1]->amountIncludingTax);
     }
+
+    public function testReturnsItemsUnchangedWhenCurrentTotalOnlyCancelsOutUpToFloatNoise(): void
+    {
+        // 0.1 + 0.2 - 0.3 is 5.55e-17 in floating point, not 0.0: the items cancel out for
+        // every practical purpose, so scaling them to a target would explode the amounts.
+        $items = [
+            $this->makeItem('a', 0.1),
+            $this->makeItem('b', 0.2),
+            $this->makeItem('c', -0.3),
+        ];
+
+        $result = $this->service->scaleItems($items, 10.00, 'EUR');
+
+        $this->assertSame($items, $result);
+    }
 }

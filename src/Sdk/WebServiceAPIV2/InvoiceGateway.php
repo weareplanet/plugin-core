@@ -23,6 +23,10 @@ class InvoiceGateway implements InvoiceGatewayInterface
 {
     use DomainLoggerTrait;
     use InvoiceMapperTrait;
+    /**
+     * Related entities this API omits from an invoice unless they are expanded.
+     */
+    private const EXPAND = ['lineItems'];
 
     private SdkTransactionInvoicesService $transactionInvoicesService;
 
@@ -42,7 +46,7 @@ class InvoiceGateway implements InvoiceGatewayInterface
         ]);
 
         try {
-            $sdkInvoice = $this->transactionInvoicesService->getPaymentTransactionsInvoicesId($invoiceId, $spaceId);
+            $sdkInvoice = $this->transactionInvoicesService->getPaymentTransactionsInvoicesId($invoiceId, $spaceId, self::EXPAND);
             return $this->mapToInvoice($sdkInvoice);
         } catch (\Throwable $e) {
             if ($e instanceof ApiException && $e->getCode() === 404) {
@@ -76,7 +80,7 @@ class InvoiceGateway implements InvoiceGatewayInterface
         ]);
 
         try {
-            $sdkInvoice = $this->transactionInvoicesService->getPaymentTransactionsInvoicesId($invoiceId, $spaceId);
+            $sdkInvoice = $this->transactionInvoicesService->getPaymentTransactionsInvoicesId($invoiceId, $spaceId, self::EXPAND);
             return $this->mapToInvoice($sdkInvoice);
         } catch (\Throwable $e) {
             $this->logger->error('Gateway: Failed to read transaction invoice.', [
@@ -112,7 +116,7 @@ class InvoiceGateway implements InvoiceGatewayInterface
         }
 
         try {
-            $results = $this->transactionInvoicesService->getPaymentTransactionsInvoicesSearch($spaceId, null, $criteria->limit, null, $order, $queryString);
+            $results = $this->transactionInvoicesService->getPaymentTransactionsInvoicesSearch($spaceId, self::EXPAND, $criteria->limit, null, $order, $queryString);
             $items = (is_object($results) && method_exists($results, 'getData')) ? $results->getData() : (array)$results;
             return new InvoiceCollection(...array_map([$this, 'mapToInvoice'], $items));
         } catch (\Throwable $e) {

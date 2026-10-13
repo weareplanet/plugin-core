@@ -36,6 +36,10 @@ class RefundGateway implements RefundGatewayInterface
     use LabelMapperTrait;
     use LineItemMapperTrait;
     use SearchPaginationTrait;
+    /**
+     * Related entities this API omits from a refund unless they are expanded.
+     */
+    private const EXPAND = ['labels', 'lineItems', 'reducedLineItems'];
 
     private SdkRefundService $sdkRefundService;
 
@@ -60,10 +64,9 @@ class RefundGateway implements RefundGatewayInterface
 
             $sdkRefunds = $this->paginateSearch(
                 function (int $offset) use ($spaceId, $query): object {
-                    // Labels are a related entity this API omits unless expanded.
                     return $this->sdkRefundService->getPaymentRefundsSearch(
                         $spaceId,
-                        ['labels'],
+                        self::EXPAND,
                         SdkProvider::MAX_PAGE_SIZE,
                         $offset,
                         null,
@@ -187,8 +190,11 @@ class RefundGateway implements RefundGatewayInterface
         ]);
 
         try {
-            // Labels are a related entity this API omits unless expanded.
-            $sdkRefund = $this->sdkRefundService->getPaymentRefundsId($refundId, $spaceId, ['labels']);
+            $sdkRefund = $this->sdkRefundService->getPaymentRefundsId(
+                $refundId,
+                $spaceId,
+                self::EXPAND,
+            );
             return $this->mapToRefund($sdkRefund, (int)$sdkRefund->getTransaction()?->getId());
         } catch (\Throwable $e) {
             $this->logger->error(
@@ -242,9 +248,10 @@ class RefundGateway implements RefundGatewayInterface
             $refund->lineItems = new LineItemCollection(...array_map([$this, 'mapToLineItem'], $sdkLineItems));
         }
 
-        // The reduced line items carry the post-refund cart state.
+        // The reduced line items carry the post-refund cart state. An empty list is a real
+        // answer (nothing left to refund), distinct from null (not reported).
         $sdkReducedLineItems = $sdkRefund->getReducedLineItems();
-        if (!empty($sdkReducedLineItems)) {
+        if ($sdkReducedLineItems !== null) {
             $refund->reducedLineItems = new LineItemCollection(...array_map([$this, 'mapToLineItem'], $sdkReducedLineItems));
         }
 

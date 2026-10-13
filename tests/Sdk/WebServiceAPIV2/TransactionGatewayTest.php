@@ -945,6 +945,7 @@ class TransactionGatewayTest extends TestCase
             $this->fail('Expected a TransactionException to be thrown.');
         } catch (TransactionException $e) {
             $this->assertTrue($e->isRetryable());
+            $this->assertTrue($e->isConflict());
         }
     }
 
@@ -958,6 +959,7 @@ class TransactionGatewayTest extends TestCase
             $this->fail('Expected a TransactionException to be thrown.');
         } catch (TransactionException $e) {
             $this->assertTrue($e->isRetryable());
+            $this->assertFalse($e->isConflict(), 'A lost connection is not a conflict.');
         }
     }
 
@@ -972,5 +974,37 @@ class TransactionGatewayTest extends TestCase
         } catch (TransactionException $e) {
             $this->assertFalse($e->isRetryable());
         }
+    }
+
+    private function minimalSdkTransaction(int $transactionId, int $spaceId): SdkTransaction
+    {
+        $sdkTransaction = new SdkTransaction();
+        $sdkTransaction->setId($transactionId);
+        $sdkTransaction->setVersion(1);
+        $sdkTransaction->setState(SdkTransactionState::PENDING);
+        $sdkTransaction->setLinkedSpaceId($spaceId);
+        $sdkTransaction->setLanguage('en-US');
+
+        return $sdkTransaction;
+    }
+
+    public function testFindRequestsTheRelatedEntitiesTheApiOmitsByDefault(): void
+    {
+        $this->sdkTransactionsService->expects($this->once())
+            ->method('getPaymentTransactionsId')
+            ->with(456, 1, ['billingAddress', 'shippingAddress', 'lineItems', 'token'])
+            ->willReturn($this->minimalSdkTransaction(456, 1));
+
+        $this->assertNotNull($this->gateway->find(1, 456));
+    }
+
+    public function testGetRequestsTheRelatedEntitiesTheApiOmitsByDefault(): void
+    {
+        $this->sdkTransactionsService->expects($this->once())
+            ->method('getPaymentTransactionsId')
+            ->with(456, 1, ['billingAddress', 'shippingAddress', 'lineItems', 'token'])
+            ->willReturn($this->minimalSdkTransaction(456, 1));
+
+        $this->assertSame(456, $this->gateway->get(1, 456)->id);
     }
 }

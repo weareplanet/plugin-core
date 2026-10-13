@@ -123,7 +123,7 @@ class TokenGatewayTest extends TestCase
         $this->tokenVersionsService->expects($this->once())
             ->method('getPaymentTokenVersionsId')
             // Argument order reversed for this SDK: version first, space second.
-            ->with(self::TOKEN_VERSION_ID, self::SPACE_ID, ['token', 'labels'])
+            ->with(self::TOKEN_VERSION_ID, self::SPACE_ID, ['token', 'labels', 'paymentConnectorConfiguration'])
             ->willReturn($this->makeSdkTokenVersion());
 
         $this->gateway->getTokenVersion(self::SPACE_ID, self::TOKEN_VERSION_ID);
@@ -286,7 +286,7 @@ class TokenGatewayTest extends TestCase
         $this->tokensService->expects($this->once())
             ->method('getPaymentTokensIdActiveVersion')
             // Argument order reversed for this SDK: token first, space second.
-            ->with(self::TOKEN_ID, self::SPACE_ID, ['token', 'labels'])
+            ->with(self::TOKEN_ID, self::SPACE_ID, ['token', 'labels', 'paymentConnectorConfiguration'])
             ->willReturn($this->makeSdkTokenVersion());
 
         $this->gateway->getActiveTokenVersion(self::SPACE_ID, self::TOKEN_ID);

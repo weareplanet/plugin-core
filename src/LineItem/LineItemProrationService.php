@@ -57,7 +57,7 @@ final class LineItemProrationService
             $currentTotal += $item->amountIncludingTax;
         }
 
-        if ($currentTotal === 0.0) {
+        if (CurrencyRoundingService::round($currentTotal, $currencyCode) === 0.0) {
             return $items;
         }
 
